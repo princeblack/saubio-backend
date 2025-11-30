@@ -1,0 +1,28 @@
+{
+  "compileOnSave": false,
+  "compilerOptions": {
+    "rootDir": ".",
+    "sourceMap": true,
+    "declaration": false,
+    "moduleResolution": "node",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "importHelpers": true,
+    "target": "es2015",
+    "module": "esnext",
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "lib": ["es2020", "dom"],
+    "skipLibCheck": true,
+    "skipDefaultLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@saubio/models": ["libs/models/src/index.ts"],
+      "@saubio/utils": ["libs/utils/src/index.ts"],
+      "@saubio/config": ["libs/config/src/index.ts"],
+      "@saubio/ui": ["libs/ui/src/index.ts"],
+      "@saubio/prisma/*": ["prisma/*"]
+    }
+  },
+  "exclude": ["node_modules", "tmp"]
+}

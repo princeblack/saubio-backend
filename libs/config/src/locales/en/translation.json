@@ -1,0 +1,1399 @@
+{
+  "nav": {
+    "services": "Services",
+    "providers": "Providers",
+    "business": "Businesses",
+    "pricing": "Pricing",
+    "faq": "FAQ",
+    "login": "Log in",
+    "cta": "Book now",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu",
+    "roleLinks": "Available spaces",
+    "role": {
+      "client": "Client space",
+      "provider": "Provider space",
+      "company": "Company space",
+      "admin": "Admin console",
+      "employee": "Operations console"
+    }
+  },
+  "promo": {
+    "label": "Launch offer",
+    "message": "15% off eco cleaning · Available in {{cities}} until {{date}}",
+    "cta": "Claim offer"
+  },
+  "hero": {
+    "badge": "100% German platform",
+    "titleLine": "Professional cleaning,",
+    "titleHighlight": "always sustainable",
+    "description": "Saubio connects households, companies and certified partners to deliver reliable, transparent cleaning tailored to your needs.",
+    "primaryCta": "Book a cleaning",
+    "secondaryCta": "Become a provider",
+    "tertiaryCta": "Request a business quote",
+    "stats": {
+      "availability": {
+        "label": "Availability",
+        "value": "24/7"
+      },
+      "satisfaction": {
+        "label": "Satisfaction",
+        "value": "4.8/5 · 12k reviews"
+      },
+      "eco": {
+        "label": "Eco missions",
+        "value": "87% bio option"
+      }
+    },
+    "preview": {
+      "title": "Booking preview",
+      "service": "Office cleaning · 280 m²",
+      "serviceLabel": "Service",
+      "dateLabel": "Date",
+      "dateValue": "27 Nov · 08:30",
+      "providersLabel": "Providers",
+      "providersValue": "3 pros",
+      "ecoLabel": "Eco products",
+      "ecoValue": "Yes (+15%) · EU Ecolabel",
+      "totalLabel": "Estimated total",
+      "totalValue": "{{amount}}",
+      "finalize": "Confirm request"
+    }
+  },
+  "trust": {
+    "badge": "1,200+ missions each month",
+    "clients": [
+      "Siemens",
+      "HelloFresh",
+      "WeWork",
+      "Zalando",
+      "Allianz"
+    ],
+    "status": {
+      "checking": "API status: checking…",
+      "online": "API status: online",
+      "degraded": "API status: degraded",
+      "offline": "API status: offline"
+    },
+    "bookings": {
+      "loading": "Fetching live bookings…",
+      "error": "Live bookings unavailable",
+      "value": "{{count}} live bookings today"
+    }
+  },
+  "system": {
+    "apiError": {
+      "title": "Connection issue",
+      "description": "We couldn’t reach the Saubio API. Please try again shortly.",
+      "retry": "Retry",
+      "dismiss": "Dismiss"
+    },
+    "error": {
+      "generic": "Something went wrong. Please try again later."
+    },
+    "loading": {
+      "generic": "Loading…"
+    },
+    "actions": {
+      "retry": "Retry"
+    }
+  },
+  "auth": {
+    "login": {
+      "title": "Welcome back",
+      "subtitle": "Access your Saubio dashboard and manage all missions in one place.",
+      "email": "Email",
+      "password": "Password",
+      "submit": "Log in"
+    },
+    "register": {
+      "title": "Create your account",
+      "subtitle": "Register as a client to book missions or onboard your cleaning business.",
+      "firstName": "First name",
+      "lastName": "Last name",
+      "phone": "Phone (optional)",
+      "email": "Email",
+      "password": "Password",
+      "submit": "Sign up"
+    },
+    "switch": {
+      "toLogin": "Already have an account?",
+      "toRegister": "First time on Saubio?",
+      "loginCta": "Log in",
+      "registerCta": "Create an account",
+      "providerPrompt": "Operate as an independent or company?",
+      "providerCta": "Apply as a provider"
+    },
+    "logout": {
+      "greeting": "Logged in as {{name}}",
+      "cta": "Sign out"
+    }
+  },
+  "providerRegister": {
+    "title": "Register as a Saubio provider",
+    "subtitle": "Tell us about your activity. Our ops team validates freelancers and companies within 48h.",
+    "typeLabel": "I operate as",
+    "types": {
+      "freelancer": {
+        "label": "Independent / Freelancer",
+        "description": "Solo provider or small crew invoicing as self-employed."
+      },
+      "company": {
+        "label": "Company / Organisation",
+        "description": "Legal entity with several employees or contractors."
+      }
+    },
+    "contact": {
+      "person": "Contact person",
+      "company": "Company name",
+      "email": "Work email",
+      "phone": "Phone (optional)"
+    },
+    "languages": {
+      "label": "Preferred languages",
+      "helper": "Select every language you can operate in",
+      "options": {
+        "de": "German",
+        "en": "English",
+        "fr": "French",
+        "pl": "Polish",
+        "tr": "Turkish"
+      }
+    },
+    "serviceAreas": {
+      "label": "Service areas",
+      "helper": "Select the districts or cities you cover regularly",
+      "options": {
+        "mitte": "Berlin Mitte",
+        "friedrichshain": "Friedrichshain & Kreuzberg",
+        "neukoelln": "Neukölln & Tempelhof",
+        "charlottenburg": "Charlottenburg & Wilmersdorf",
+        "prenzlauer": "Prenzlauer Berg & Pankow",
+        "potsdam": "Potsdam & Brandenburg"
+      }
+    },
+    "message": {
+      "label": "Tell us more",
+      "placeholder": "Share certifications, team size, eco products…"
+    },
+    "compliance": "By submitting you authorise Saubio to review your documents and contact you by email or phone.",
+    "submit": "Send my application",
+    "submitting": "Sending…",
+    "success": {
+      "title": "Application received",
+      "description": "Our operations team reviews every submission manually. Expect a response within 2 business days at {{email}}.",
+      "nextSteps": "You can close this page or keep exploring the platform."
+    },
+    "error": {
+      "title": "Unable to submit your request",
+      "description": "Check your connection and try again."
+    },
+    "requirements": {
+      "title": "What we verify",
+      "items": [
+        "Kleinunternehmer certificate or company registration",
+        "Public liability insurance",
+        "Identity & background check",
+        "Eco cleaning certification or equivalent training"
+      ]
+    },
+    "benefits": {
+      "title": "Why join Saubio",
+      "items": [
+        "Recurring contracts with premium clients",
+        "Eco supplies delivered or reimbursed",
+        "Planning app and instant support",
+        "Fast payouts with detailed analytics"
+      ]
+    }
+  },
+  "bookingForm": {
+    "title": "Book a mission",
+    "subtitle": "Fill in the details below; you can adjust everything later from your dashboard.",
+    "address": "Address",
+    "street": "Street and number",
+    "street2": "Building, floor, etc.",
+    "postalCode": "Postal code",
+    "city": "City",
+    "country": "Country code",
+    "service": "Service type",
+    "surface": "Surface (m²)",
+    "startAt": "Start date/time",
+    "endAt": "End date/time",
+    "frequency": "Frequency",
+    "mode": "Assignment mode",
+    "ecoPreference": "Eco preference",
+    "providerIds": "Preferred provider IDs (comma separated)",
+    "notes": "Notes (optional)",
+    "submit": "Create booking",
+    "success": "Booking created successfully!",
+    "creating": "Creating…",
+    "providers": "Preferred providers (IDs)",
+    "providersPlaceholder": "provider-id-1, provider-id-2",
+    "validation": {
+      "streetLine1": "Please provide a valid address.",
+      "postalCode": "Postal code is required.",
+      "city": "City is required.",
+      "surface": "Surface must be greater than zero.",
+      "schedule": "Pick a valid schedule.",
+      "startBeforeEnd": "Start time must be before end time.",
+      "startInPast": "The slot must be in the future.",
+      "conflict": "This slot is already booked. Pick another time."
+    },
+    "availability": {
+      "title": "Availability",
+      "available": "Available",
+      "conflict": "Conflict",
+      "past": "In the past",
+      "invalid": "Check details",
+      "conflictDetail": "Another booking already exists in {{city}} on {{start}}.",
+      "pastDetail": "Choose a future schedule to request the mission.",
+      "invalidDetail": "Complete the dates to check availability."
+    },
+    "summary": {
+      "title": "Pricing summary",
+      "base": "Subtotal",
+      "eco": "Eco option",
+      "tax": "VAT (19%)",
+      "total": "Estimated total"
+    }
+  },
+  "bookingList": {
+    "empty": "No bookings yet. Create your first mission to see it here.",
+    "view": "View",
+    "cancel": "Cancel",
+    "status": "Status",
+    "city": "City",
+    "date": "Date"
+  },
+  "bookingDashboard": {
+    "title": "Booking dashboard",
+    "subtitle": "Monitor missions, matching and cancellations in real time.",
+    "ctaCreate": "New booking",
+    "filterAllStatuses": "All statuses",
+    "filterCityPlaceholder": "Filter by city",
+    "viewDetail": "Open detail",
+    "providers": "{{count}} provider assigned",
+    "providers_plural": "{{count}} providers assigned",
+    "cancel": "Cancel booking",
+    "timelineHeading": "Cancellation & matching timeline",
+    "timelineProvider": "Provider ID: {{providerId}}",
+    "timelineProviders": "Providers: {{providers}}",
+    "timelineReason": "Reason: {{reason}}",
+    "emptyTimeline": "No timeline events yet for this booking.",
+    "emptyTitle": "No bookings match your filters",
+    "emptyDescription": "Adjust the filters or create a new mission to get started.",
+    "errorTitle": "Unable to load bookings",
+    "errorDescription": "Check your connection or try again in a few seconds.",
+    "noSelectionTitle": "Select a booking",
+    "noSelectionDescription": "Choose a mission on the left to inspect matching and cancellation events.",
+    "noPricing": "Pricing pending",
+    "manageLink": "Open booking dashboard",
+    "adminHint": "Admins can cancel any mission.",
+    "assignedProviders": "{{count}} provider assigned",
+    "assignedProviders_plural": "{{count}} providers assigned",
+    "cancellationReason": "Cancellation reason",
+    "cityPlaceholder": "Filter by city",
+    "noProviders": "No providers assigned",
+    "noSelection": "Select a booking on the left to inspect its details.",
+    "timelineEmpty": "No events recorded for this mission.",
+    "timelineTitle": "Event history",
+    "viewDetails": "View details"
+  },
+  "bookingTimeline": {
+    "created": "Created",
+    "updated": "Updated",
+    "providerAssigned": "Provider assigned",
+    "providerRemoved": "Provider removed",
+    "statusChanged": "Status changed",
+    "statusCancelled": "Status changed to {{status}}",
+    "customerNotified": "Customer notified",
+    "invoiceGenerated": "Invoice generated",
+    "paymentCaptured": "Payment captured"
+  },
+  "appNav": {
+    "label": "Authenticated navigation",
+    "section": "Workspace",
+    "overview": "Bookings overview",
+    "new": "Create booking",
+    "quickLinks": "Quick links",
+    "toggle": "Open navigation",
+    "close": "Close navigation",
+    "sidebar": {
+      "hide": "Collapse sidebar",
+      "show": "Expand sidebar",
+      "openMobile": "Open workspace menu"
+    },
+    "notifications": "Notifications",
+    "support": "Support",
+    "profile": "My profile"
+  },
+  "support": {
+    "title": "Need help?",
+    "description": "Reach our team or browse resources to keep your missions on track.",
+    "actions": {
+      "createTicket": "Create support ticket",
+      "createTicketDescription": "Report an incident or ask the Saubio team for assistance.",
+      "documents": "Guides & documentation",
+      "documentsDescription": "Browse checklists, onboarding kits and compliance guides."
+    },
+    "newTicket": {
+      "title": "New ticket"
+    },
+    "empty": "No tickets yet.",
+    "emptyDescription": "Create your first support ticket to reach the Saubio team.",
+    "form": {
+      "subject": "Subject",
+      "subjectPlaceholder": "Brief summary of your request",
+      "description": "Description",
+      "descriptionPlaceholder": "Describe your issue in detail",
+      "category": "Category",
+      "priority": "Priority",
+      "create": "Create ticket",
+      "creating": "Creating…"
+    },
+    "messages": {
+      "title": "Messages",
+      "empty": "No replies yet. Start the conversation!",
+      "placeholder": "Write a message…",
+      "send": "Send",
+      "sending": "Sending…"
+    },
+    "ticket": {
+      "updated": "Updated"
+    },
+    "errorTitle": "Unable to load support tickets",
+    "errorDescription": "Please try again shortly."
+  },
+  "notifications": {
+    "title": "Notifications",
+    "description": "Stay informed about assignments, cancellations and billing events.",
+    "empty": "You're all caught up! New alerts will appear here as soon as missions change.",
+    "subtitle": "Stay on top of assignments, reminders and billing alerts.",
+    "filters": {
+      "all": "All",
+      "allTypes": "All types",
+      "unread": "Unread only"
+    },
+    "types": {
+      "booking_status": "Booking status",
+      "booking_assignment": "Booking assignment",
+      "booking_cancellation": "Booking cancellation",
+      "billing": "Billing",
+      "support_update": "Support update"
+    },
+    "channels": {
+      "in_app": "In-app",
+      "email": "Email",
+      "push": "Push notifications"
+    },
+    "markAll": "Mark all read",
+    "marking": "Marking…",
+    "markRead": "Mark as read",
+    "preferences": {
+      "title": "Notification preferences",
+      "channels": "Channels",
+      "save": "Save preferences",
+      "saving": "Saving…"
+    },
+    "errorTitle": "Unable to load notifications",
+    "errorDescription": "Refresh the page or try again in a moment.",
+    "status": {
+      "unread": "Unread",
+      "read": "Read"
+    }
+  },
+  "profile": {
+    "title": "Profile",
+    "description": "Review your details and keep everything up to date.",
+    "fields": {
+      "name": "Name",
+      "email": "Email",
+      "phone": "Phone",
+      "locale": "Preferred language",
+      "phoneMissing": "No phone number set",
+      "firstName": "First name",
+      "lastName": "Last name",
+      "currentPassword": "Current password",
+      "newPassword": "New password"
+    },
+    "signInPrompt": "Sign in to edit your profile and manage notification preferences.",
+    "sections": {
+      "details": "Personal details",
+      "preferences": "Preferences",
+      "security": "Security"
+    },
+    "actions": {
+      "save": "Save changes",
+      "saving": "Saving…",
+      "updatePassword": "Update password",
+      "updatingPassword": "Updating…"
+    },
+    "preferences": {
+      "marketing": "Receive Saubio offers",
+      "productUpdates": "Product updates",
+      "darkMode": "Enable dark mode",
+      "digest": "Digest frequency"
+    },
+    "meta": {
+      "createdAt": "Created",
+      "updatedAt": "Last updated"
+    },
+    "errorTitle": "Unable to load your profile",
+    "errorDescription": "Refresh the page to try again."
+  },
+  "configurator": {
+    "heading": "3-step booking",
+    "title": "Configure your mission with live pricing",
+    "description": "Select service, frequency and preferences (eco products, checklists, access) and check availability of certified partners in your area.",
+    "steps": [
+      "Define address, surface and tasks.",
+      "Choose preferences: favourites, eco mode, one-off or recurring.",
+      "Validate, pay securely and track the mission in real time."
+    ],
+    "frequencyLabel": "Frequency",
+    "frequencies": [
+      "One-off",
+      "Weekly",
+      "Monthly"
+    ],
+    "modeLabel": "Assignment mode",
+    "modeValue": "SmartMatch (recommended)",
+    "preferredLabel": "Preferred provider",
+    "preferredValue": "EcoClean Berlin GmbH",
+    "controlLabel": "Product control",
+    "controlValue": "Eco products · Mentioned on invoice",
+    "extraLabel": "Extras",
+    "extraValue": "Custom checklist, mandatory before/after photos."
+  },
+  "about": {
+    "heading": "Our commitment",
+    "title": "Certified cleanliness that respects your spaces and the planet",
+    "description": "Every Saubio provider is verified (ID, insurance, certificates) and trained on German hygiene standards. We cover residential, offices, retail, hospitality and industrial sites.",
+    "highlights": [
+      {
+        "title": "Providers onboarded in 48h",
+        "description": "Document checks, liability insurance, VAT compliance and digital signatures."
+      },
+      {
+        "title": "Real-time tracking",
+        "description": "Checklists, secure chat, photos and client approval before billing."
+      }
+    ],
+    "cards": [
+      {
+        "title": "Verified partners",
+        "description": "Tax documents, insurance and EcoClean badge validated."
+      },
+      {
+        "title": "Secure payments",
+        "description": "Mollie & PayPal for freelancers and teams."
+      },
+      {
+        "title": "Support 7/7",
+        "description": "Dedicated team in DE/EN/FR."
+      },
+      {
+        "title": "GDPR compliant",
+        "description": "Hosted in AWS Frankfurt with consent management."
+      }
+    ]
+  },
+  "services": {
+    "heading": "Saubio service catalogue",
+    "title": "Solutions for households, freelancers and enterprises",
+    "description": "Each service can be booked manually or via SmartMatch – with eco option, multi-site management and full tracking.",
+    "badge": "Eco available",
+    "items": [
+      {
+        "title": "Residential",
+        "description": "Homes, apartments, co-living and Airbnb."
+      },
+      {
+        "title": "Offices & coworking",
+        "description": "Flexible workspaces, meeting rooms, open space."
+      },
+      {
+        "title": "Industrial & warehouses",
+        "description": "Production areas, logistics, HACCP compliant."
+      },
+      {
+        "title": "Windows & façades",
+        "description": "Rope access, lifts, glass surfaces."
+      },
+      {
+        "title": "Disinfection",
+        "description": "Enhanced hygiene for sensitive environments."
+      },
+      {
+        "title": "Eco+ custom",
+        "description": "Eco cleaning, recycling, waste management."
+      }
+    ],
+    "cta": "View details →"
+  },
+  "matching": {
+    "heading": "Provider selection",
+    "title": "Control preferences or let Saubio choose",
+    "description": "Pick the right mode for every mission. Combine company teams and freelancers, validate documents and follow allocation from the dashboard.",
+    "modes": [
+      {
+        "title": "Manual selection",
+        "description": "Compare profiles, check rates, add favourites and manage recurrence.",
+        "points": [
+          "Filters by rating, price, distance and speciality",
+          "Detailed profile (certifications, languages, insurance)",
+          "Proof of eco option compliance"
+        ]
+      },
+      {
+        "title": "SmartMatch automation",
+        "description": "Algorithm selects the ideal provider based on criteria and live availability.",
+        "points": [
+          "Score by rating, reliability and proximity",
+          "Combine teams for larger surfaces",
+          "AI recommendations (surface, eco, history)"
+        ]
+      }
+    ]
+  },
+  "eco": {
+    "heading": "Eco option",
+    "title": "Eco-friendly cleaning with full traceability",
+    "description": "Supplier info, EU Ecolabel, stock tracking and invoice mention documented. Business clients can audit missions directly from the dashboard.",
+    "points": [
+      "+15% automatically and transparently applied",
+      "Checklist: products used, quantities, photo proof",
+      "CO₂ stats, eco adoption rate, quality score per site",
+      "Network of certified EcoClean partners"
+    ],
+    "metricsTitle": "Sustainability indicators",
+    "metrics": {
+      "co2": "-23% CO₂ reduction",
+      "bioMissions": "4,560 eco missions in 2024",
+      "satisfaction": "96% eco satisfaction",
+      "partners": "178 EcoClean partners"
+    },
+    "metricLabels": {
+      "co2": "Average CO₂ reduction",
+      "bioMissions": "Eco missions 2024",
+      "satisfaction": "Eco option satisfaction",
+      "partners": "EcoClean partners"
+    }
+  },
+  "why": {
+    "heading": "Why Saubio",
+    "title": "Built for the German market",
+    "reasons": [
+      {
+        "title": "Verified providers",
+        "description": "KYC, insurance, hygiene training and EcoClean badge."
+      },
+      {
+        "title": "Secure payments",
+        "description": "Mollie, PayPal Business and SEPA ready."
+      },
+      {
+        "title": "Live tracking",
+        "description": "Chat, photos, optional geolocation and approval before invoicing."
+      },
+      {
+        "title": "Support 7/7",
+        "description": "DE/EN/FR assistance for clients, providers and admins."
+      },
+      {
+        "title": "German compliance",
+        "description": "AWS Frankfurt, legal imprint, VAT & GDPR compliant."
+      },
+      {
+        "title": "Analytics",
+        "description": "Dashboard with eco vs. standard, satisfaction and revenue per city."
+      }
+    ]
+  },
+  "mobile": {
+    "heading": "Mobile apps",
+    "title": "Follow every mission with the Saubio app",
+    "description": "Clients, providers, managers and admins access schedules, chat, payments and documents in real time (React Native & Expo).",
+    "flows": [
+      {
+        "id": "clients",
+        "title": "Clients",
+        "summary": "Clients: guided booking, live pricing, secure chat, invoices, loyalty program.",
+        "items": [
+          "Guided booking & live pricing",
+          "Secure chat & push notifications",
+          "Invoices and loyalty rewards"
+        ]
+      },
+      {
+        "id": "providers",
+        "title": "Providers",
+        "summary": "Providers: availability, team missions, checklists, photo proof, instant payouts.",
+        "items": [
+          "Availability & team missions",
+          "Checklists & before/after photos",
+          "Instant payouts"
+        ]
+      },
+      {
+        "id": "companies",
+        "title": "Business & admin",
+        "summary": "Business/Admin: multi-site control, eco audits, quality dashboards, dispute tools.",
+        "items": [
+          "Multi-site and access management",
+          "Eco audits & quality dashboards",
+          "Admin, billing and dispute modules"
+        ]
+      }
+    ]
+  },
+  "pricing": {
+    "heading": "Plans",
+    "title": "Transparent pricing for every need",
+    "description": "Pricing adapts to surface, frequency, number of providers and eco option. Businesses can negotiate framework contracts with central billing.",
+    "plans": [
+      {
+        "name": "Essential",
+        "audience": "Home & small spaces",
+        "price": "from €29.90 per mission",
+        "features": [
+          "Residential & Airbnb cleaning",
+          "Manual or SmartMatch",
+          "Card, Apple Pay, PayPal",
+          "Support DE/EN/FR"
+        ]
+      },
+      {
+        "name": "Pro Business",
+        "audience": "Offices & retail",
+        "price": "from €45.00 per mission",
+        "features": [
+          "Multi-site & team management",
+          "Custom checklists",
+          "Eco tracking & VAT compliance",
+          "Calendar & API integrations"
+        ],
+        "highlight": true
+      },
+      {
+        "name": "Eco Premium",
+        "audience": "Industrial, healthcare, logistics",
+        "price": "custom monthly quote",
+        "features": [
+          "HACCP & ISO protocols",
+          "Quality & CO₂ reports",
+          "Multi-provider missions",
+          "Backoffice & billing support"
+        ]
+      }
+    ],
+    "cta": "Request a quote"
+  },
+  "testimonials": {
+    "heading": "Trusted by",
+    "title": "Voices from clients, companies and providers",
+    "items": [
+      {
+        "name": "Lukas Meyer",
+        "role": "Facility Manager · Berlin",
+        "quote": "SmartMatch saves us time. Eco reports feed directly into our ESG audits.",
+        "score": "9.4 / 10"
+      },
+      {
+        "name": "Anaïs Dupont",
+        "role": "Office Manager · Munich",
+        "quote": "Live tracking and multi-site invoicing simplify our daily operations. Support is very responsive.",
+        "score": "8.8 / 10"
+      },
+      {
+        "name": "Jonas Richter",
+        "role": "Freelancer · Hamburg",
+        "quote": "Clear calendar, fast payouts and eco missions boost my business.",
+        "score": "9.1 / 10"
+      }
+    ]
+  },
+  "cta": {
+    "heading": "Ready to get started?",
+    "title": "Book online now and receive a free site audit",
+    "description": "We support you with migration, onboarding your providers and ongoing quality monitoring.",
+    "primary": "Create account",
+    "secondary": "Talk to an expert",
+    "pointsTitle": "Key checkpoints",
+    "points": [
+      "Launch within 48h in Berlin, Hamburg, Munich, Cologne",
+      "Import existing providers and verify documents",
+      "Configure multi-party payment routes",
+      "Training for client, provider and admin teams"
+    ]
+  },
+  "footer": {
+    "description": "Modern, sustainable cleaning platform for major German cities. Verified providers, eco products and 7-day support.",
+    "newsletterPlaceholder": "Your email",
+    "newsletterCta": "Subscribe",
+    "sections": {
+      "company": "Company",
+      "legal": "Legal",
+      "contact": "Contact"
+    },
+    "links": {
+      "about": "About us",
+      "services": "Services",
+      "pricing": "Pricing",
+      "blog": "Guides & news",
+      "imprint": "Imprint",
+      "privacy": "Privacy",
+      "terms": "Terms"
+    },
+    "contact": {
+      "address": "Karl-Marx-Allee 92, 10243 Berlin",
+      "phone": "+49 30 123 456 78",
+      "email": "support@saubio.de"
+    },
+    "copyright": "© {{year}} Saubio · All rights reserved"
+  },
+  "language": {
+    "label": "Change language",
+    "de": "German",
+    "en": "English",
+    "fr": "French"
+  },
+  "sidebar": {
+    "client": {
+      "dashboard": "Dashboard",
+      "bookings": "Bookings",
+      "new": "New booking",
+      "notifications": "Notifications",
+      "support": "Support",
+      "profile": "Profile"
+    },
+    "provider": {
+      "dashboard": "Dashboard",
+      "missions": "Requests & jobs",
+      "profileSection": "Profile & identity",
+      "profilePublic": "Edit public profile",
+      "profileAddress": "Addresses",
+      "profileAreas": "Service areas",
+      "profileIdentity": "Identity documents",
+      "earningsSection": "Earnings & pricing",
+      "earningsOverview": "Revenue overview",
+      "earningsPricing": "Hourly rates",
+      "earningsInvoices": "Invoices & payouts",
+      "supportSection": "Help & resources",
+      "supportLibrary": "Resource center",
+      "supportChecklist": "Activation checklist",
+      "documentsShortcut": "My documents",
+      "pricingShortcut": "My rates",
+      "invoicesShortcut": "My invoices",
+      "zonesShortcut": "My service areas",
+      "availabilitySection": "Availability",
+      "availabilitySchedule": "Manage availability",
+      "availabilityTimeOff": "Schedule time off",
+      "statsSection": "Statistics",
+      "statsReliability": "Reliability & status",
+      "statsReviews": "Client reviews"
+    },
+    "admin": {
+      "dashboard": "Dashboard",
+      "users": "Users",
+      "providers": "Provider requests",
+      "bookings": "Bookings",
+      "support": "Support",
+      "operations": "Operations",
+      "tickets": "Tickets"
+    }
+  },
+  "clientDashboard": {
+    "title": "Welcome to your client space",
+    "subtitle": "Track your bookings, relaunch a mission in one click and reach your dedicated support.",
+    "actions": "Quick actions",
+    "quick": {
+      "newBooking": "Plan a new service",
+      "manage": "Manage my bookings",
+      "support": "Contact support"
+    },
+    "summary": "Summary",
+    "summaryItems": {
+      "upcoming": "Next mission",
+      "eco": "Eco option",
+      "favorite": "Favourite provider"
+    },
+    "summaryErrorTitle": "Unable to load summary",
+    "summaryErrorDescription": "Refresh the page or try again shortly.",
+    "upcomingErrorTitle": "Unable to load upcoming missions",
+    "upcomingErrorDescription": "Try again to fetch your next bookings.",
+    "upcomingTitle": "Upcoming missions",
+    "notificationsTitle": "Recent notifications",
+    "viewNotifications": "View all notifications",
+    "noMission": "No mission planned",
+    "noProvider": "No favourite provider yet"
+  },
+  "providerDashboard": {
+    "title": "Provider dashboard",
+    "subtitle": "Follow your missions, revenue and satisfaction indicators at a glance.",
+    "metrics": {
+      "completed": "MISSIONS COMPLETED",
+      "revenue": "REVENUE THIS MONTH",
+      "rating": "AVERAGE RATING",
+      "eco": "ECO RATE"
+    },
+    "trend30d": "vs last 30 days",
+    "trendClients": "happy clients",
+    "trendBio": "bio missions this month",
+    "client": "Client",
+    "upcoming": "Upcoming missions",
+    "emptyUpcoming": "No mission planned for now.",
+    "performance": {
+      "title": "Operational performance",
+      "acceptance": "Acceptance rate",
+      "repeat": "Returning clients",
+      "response": "Response time (minutes)"
+    },
+    "qualityFeed": "Feedback & quality",
+    "emptyFeedback": "No customer feedback yet.",
+    "knowledgeCenter": "Knowledge center",
+    "resource": {
+      "ecoChecklist": "Updated eco-products checklist",
+      "ecoChecklistDescription": "Review your stock of EcoClean Partner certified products.",
+      "training": "Training ‘Managing complex missions’",
+      "trainingDescription": "Online session available next Monday.",
+      "view": "View",
+      "register": "Register"
+    },
+    "emptyResources": "No resource available at the moment.",
+    "feedback": {
+      "positive": "Rating 5/5 · “Apartment spotless, thank you!”",
+      "bioReminder": "Eco products request confirmed"
+    },
+    "missions": {
+      "title": "Missions",
+      "placeholder": "Detailed planning will be available soon."
+    },
+    "revenue": {
+      "title": "Revenue",
+      "placeholder": "Financial reporting will be available soon."
+    },
+    "profile": {
+      "title": "Profile",
+      "placeholder": "Provider profile management is coming soon."
+    },
+    "resources": {
+      "title": "Resources",
+      "placeholder": "The resource library will be available shortly."
+    },
+    "scheduleTitle": "Upcoming schedule",
+    "alertsTitle": "Quality alerts",
+    "paymentsTitle": "Payouts",
+    "feedbackTitle": "Client feedback",
+    "qualityTitle": "Operational quality",
+    "payments": {
+      "total": "Payments received",
+      "pending": "Pending",
+      "lastPayout": "Last payout"
+    },
+    "quality": {
+      "ecoRate": "Eco rate",
+      "incidents": "Incidents",
+      "response": "Response time",
+      "rating": "Average rating"
+    },
+    "scheduleEmpty": "No missions scheduled for this period.",
+    "alertsEmpty": "No active alerts.",
+    "feedbackEmpty": "No recent feedback.",
+    "errorTitle": "Unable to load dashboard",
+    "errorDescription": "Refresh the page or try again shortly."
+  },
+  "adminDashboard": {
+    "title": "Admin dashboard",
+    "subtitle": "Monitor core KPIs, pending missions and critical alerts on the platform.",
+    "metrics": {
+      "activeProviders": "ACTIVE PROVIDERS",
+      "pendingBookings": "PENDING REQUESTS",
+      "nps": "SATISFACTION SCORE",
+      "revenue": "MONTHLY REVENUE"
+    },
+    "trendCycle": "vs previous period",
+    "trendSurvey": "latest client survey",
+    "alerts": {
+      "documents": "Providers awaiting document validation",
+      "disputes": "Critical support tickets",
+      "overdue": "Overdue cases"
+    },
+    "alertSection": "Alerts & priority actions",
+    "alertsEmpty": "No active alerts.",
+    "performance": {
+      "title": "Platform performance",
+      "matching": "Successful matching",
+      "onTime": "On-time missions",
+      "supportSla": "Support SLA (h)"
+    },
+    "topProviders": "Top providers",
+    "providersEmpty": "No provider evaluated yet.",
+    "escalations": "High-impact tickets",
+    "ticketsEmpty": "No critical ticket to process.",
+    "ticketStatus": "In progress",
+    "ticketStatusPending": "To validate",
+    "providersMissionCount": "{{count}} missions",
+    "statusLabels": {
+      "open": "Open",
+      "in_progress": "In progress",
+      "waiting_customer": "Waiting customer",
+      "resolved": "Resolved",
+      "closed": "Closed"
+    },
+    "priorityLabels": {
+      "low": "Low priority",
+      "medium": "Medium priority",
+      "high": "High priority",
+      "urgent": "Urgent"
+    },
+    "section": {
+      "placeholderTitle": "Coming soon",
+      "placeholderDescription": "This section will be available shortly in the admin console."
+    }
+  },
+  "common": {
+    "enabled": "Enabled",
+    "disabled": "Disabled"
+  },
+  "bookingDetail": {
+    "back": "Back",
+    "supportCta": "Contact support",
+    "rebookCta": "Book a new mission",
+    "timeline": {
+      "invoiceReadyTitle": "Invoice available",
+      "invoiceReadyDescription": "Your invoice can now be downloaded from your dashboard.",
+      "downloadInvoice": "Download",
+      "paymentCapturedTitle": "Payment confirmed",
+      "paymentCapturedDescription": "We secured the payment for this mission. Ops will keep you updated.",
+      "paymentCapturedAmount": "Amount {{amount}}",
+      "paymentCapturedShortNotice": "Short notice deposit"
+    }
+  },
+  "checkoutAccount": {
+    "badge": "Secure checkout",
+    "title": "Create your Saubio account",
+    "subtitle": "Save your booking and continue to payment. You can manage everything from your dashboard afterwards.",
+    "existingAccount": "Already have an account?",
+    "newHere": "New to Saubio?",
+    "switchToLogin": "Sign in instead",
+    "switchToRegister": "Create an account",
+    "registerButton": "Create my account",
+    "loginButton": "Sign in and continue",
+    "oauth": {
+      "title": "Or continue with",
+      "google": "Continue with Google",
+      "apple": "Continue with Apple",
+      "comingSoon": "Social login coming very soon."
+    },
+    "errors": {
+      "missingBooking": "We could not find the booking reference.",
+      "restart": "Please restart your booking from the beginning."
+    },
+    "summary": {
+      "title": "Booking summary",
+      "bookingRef": "Booking #{{id}}",
+      "pending": "To be confirmed",
+      "service": "Service",
+      "schedule": "Schedule",
+      "duration": "Duration: {{hours}} h",
+      "providers": "Required providers",
+      "provider": "Selected provider: {{provider}}",
+      "total": "Total due today",
+      "deposit": "Short notice deposit: {{amount}} (captured instantly, released once the mission is confirmed).",
+      "shortNotice": "Short notice",
+      "extras": "Extras & options",
+      "help": "Need help?",
+      "editBooking": "Edit booking"
+    }
+  },
+  "checkoutPayment": {
+    "badge": "Secure checkout",
+    "title": "Confirm your payment",
+    "subtitle": "Validate the short-notice deposit or review the last details before your mission.",
+    "errors": {
+      "missingBooking": "Booking not found",
+      "restart": "Please restart the booking flow.",
+      "loadFailed": "Unable to load booking details.",
+      "authRequired": "Please sign in to continue the payment."
+    },
+    "summary": {
+      "bookingRef": "Reference",
+      "schedule": "Schedule",
+      "duration": "Duration: {{hours}} h",
+      "amount": "Estimated amount",
+      "deposit": "Deposit to block: {{amount}}"
+    },
+    "actions": {
+      "shortNoticeTitle": "Short-notice deposit",
+      "shortNoticeDescription": "Confirm the temporary hold of {{amount}}. It will be released automatically if the mission cannot be matched.",
+      "shortNoticeNoDeposit": "A deposit will be confirmed automatically as soon as a provider accepts.",
+      "processing": "Processing…",
+      "confirmDeposit": "Confirm deposit",
+      "standardTitle": "No upfront payment",
+      "standardDescription": "Your booking is recorded. No action is required for this schedule.",
+      "supportHint": "Ops will contact you once a provider accepts.",
+      "login": "Sign in"
+    },
+    "help": {
+      "title": "Need help?",
+      "description": "You can review your booking or contact support at any time.",
+      "viewBooking": "Open booking"
+    },
+    "success": {
+      "badge": "Payment confirmed",
+      "title": "All set!",
+      "description": "Your payment is confirmed. Ops is preparing the mission.",
+      "backToDashboard": "Back to dashboard",
+      "redirectCountdown": "Redirecting in {{seconds}}s…"
+    }
+  },
+  "emails": {
+    "paymentConfirmed": {
+      "subject": "Your payment is confirmed",
+      "bodyShortNotice": "We’ve confirmed the temporary hold of {{amount}} for booking {{bookingId}}. Ops will contact you once a provider accepts.",
+      "bodyStandard": "We’ve received your payment of {{amount}} for booking {{bookingId}}. Your mission is now fully confirmed."
+    }
+  },
+  "adminBookings": {
+    "paymentColumn": "Payment",
+    "invoiceColumn": "Invoice",
+    "invoiceDownload": "Download",
+    "invoiceMissing": "Pending",
+    "paymentBannerPending": "{{count}} short-notice payment(s) still require confirmation.",
+    "paymentBannerCleared": "{{count}} short-notice payment(s) captured recently.",
+    "paymentStatus": {
+      "pending": "Awaiting capture",
+      "confirmed": "Captured",
+      "standard": "Standard"
+    }
+  },
+  "providerMissions": {
+    "title": "Missions",
+    "subtitle": "Track assignments, statuses and availability.",
+    "filters": {
+      "status": "Status",
+      "city": "City",
+      "eco": "Eco option",
+      "from": "From",
+      "to": "To"
+    },
+    "eco": {
+      "all": "All options",
+      "bio": "Bio only",
+      "standard": "Standard"
+    },
+    "list": {
+      "empty": "No missions match these filters."
+    },
+    "detail": {
+      "title": "Mission details",
+      "address": "Address",
+      "schedule": "Schedule",
+      "pricing": "Pricing",
+      "notes": "Notes",
+      "client": "Client",
+      "surface": "Surface",
+      "eco": "Eco option",
+      "duration": "Estimated duration"
+    },
+    "actions": {
+      "start": "Start mission",
+      "complete": "Mark as completed"
+    }
+  },
+  "providerRevenue": {
+    "title": "Revenue",
+    "subtitle": "Monitor payouts and upcoming payments.",
+    "summaryTitle": "Payment summary",
+    "tableTitle": "Payment history",
+    "chartTitle": "Revenue trend",
+    "columns": {
+      "date": "Date",
+      "booking": "Mission",
+      "amount": "Amount",
+      "status": "Status"
+    },
+    "status": {
+      "captured": "Captured",
+      "authorized": "Authorized",
+      "pending": "Pending",
+      "processing": "Processing",
+      "paid": "Paid"
+    }
+  },
+  "providerResourcesPage": {
+    "title": "Resources",
+    "subtitle": "Checklists, documentation and training material.",
+    "filters": {
+      "all": "All types",
+      "checklist": "Checklists",
+      "document": "Documents",
+      "training": "Training"
+    },
+    "open": "Open resource",
+    "updated": "Updated {{date}}",
+    "empty": "No resources yet."
+  },
+  "providerProfilePage": {
+    "title": "Provider profile",
+    "subtitle": "Keep your public profile up to date for clients.",
+    "details": "General information",
+    "availability": "Operational settings",
+    "fields": {
+      "bio": "About you",
+      "languages": "Languages",
+      "serviceAreas": "Service areas",
+      "serviceCategories": "Services offered",
+      "hourlyRate": "Hourly rate (€/h)",
+      "offersEco": "Offers eco option",
+      "yearsExperience": "Years of experience"
+    },
+    "actions": {
+      "save": "Save changes",
+      "saving": "Saving…",
+      "success": "Profile updated"
+    },
+    "sections": {
+      "profileDescription": "Keep a clear description and highlight what makes you different.",
+      "addressTitle": "Address & service zone",
+      "addressDescription": "Your legal German address ensures you can accept Saubio missions.",
+      "addressEmpty": "No address on file. Add one to unlock requests near you.",
+      "addressCta": "Update my address",
+      "identityTitle": "Identity verification",
+      "identityDescription": "Upload your ID so our team can validate your account.",
+      "street": "Street",
+      "city": "City",
+      "zonesTitle": "Service areas",
+      "zonesDescription": "Mark the neighbourhoods or cities where you can operate.",
+      "zonesEmpty": "No service area yet. Start adding cities or districts you cover.",
+      "zonesHelp": "Type a city, district or postal code, then select it.",
+      "zonesPlaceholder": "Berlin, Friedrichshain…",
+      "zonesNoResults": "No suggestion",
+      "zonesRadiusLabel": "Radius (km)",
+      "zonesRemove": "Remove this area"
+    },
+    "identity": {
+      "status": {
+        "not_started": "Not started",
+        "submitted": "Under review",
+        "verified": "Verified",
+        "rejected": "Rejected"
+      },
+      "documentsLabel": "{{count}} document(s) sent",
+      "noDocuments": "No document submitted yet",
+      "cta": "Manage my documents"
+    }
+  },
+  "providerAvailabilityPage": {
+    "title": "Availability & calendar",
+    "subtitle": "Plan your free slots and upcoming breaks.",
+    "comingSoon": "We’re building an interactive calendar to manage your availabilities and breaks.",
+    "betaNotice": "Meanwhile you can reach our team to update your planning or use the help center.",
+    "cta": {
+      "resources": "Open help center",
+      "contact": "Contact support"
+    },
+    "timeOffTitle": "Declare time off",
+    "timeOffDescription": "Let us know about vacations or breaks so we avoid sending requests during that period.",
+    "timeOffHint": "Feature coming soon."
+  },
+  "providerStatsPage": {
+    "title": "Statistics & reviews",
+    "subtitle": "Track your reliability, response time and client reviews.",
+    "comingSoon": "Soon you will see detailed stats, KPIs and revenue trends here.",
+    "betaNotice": "You can already review your revenue in the “Revenue” section. Reviews will appear here shortly.",
+    "cta": {
+      "revenue": "View my revenue",
+      "resources": "See best practices"
+    },
+    "reviewsTitle": "Client reviews",
+    "reviewsDescription": "Quickly access future feedback and respond directly from this page.",
+    "reviewsHint": "Detailed review management is arriving soon."
+  },
+  "adminUsers": {
+    "title": "Users",
+    "subtitle": "Manage Saubio roles, status and access.",
+    "filters": {
+      "search": "Search a user",
+      "role": "Role",
+      "status": "Status"
+    },
+    "role": {
+      "all": "All roles",
+      "client": "Client",
+      "provider": "Provider",
+      "company": "Company",
+      "employee": "Employee",
+      "admin": "Admin"
+    },
+    "status": {
+      "all": "All status",
+      "active": "Active",
+      "invited": "Invited",
+      "suspended": "Suspended"
+    },
+    "columns": {
+      "name": "Name",
+      "email": "Email",
+      "role": "Role",
+      "status": "Status",
+      "createdAt": "Created",
+      "lastLogin": "Last login",
+      "actions": "Actions"
+    },
+    "actions": {
+      "activate": "Activate",
+      "suspend": "Suspend",
+      "reinvite": "Resend invite"
+    },
+    "toast": {
+      "activated": "User activated",
+      "suspended": "User suspended"
+    }
+  },
+  "adminProviderRequestsPage": {
+    "title": "Provider onboarding",
+    "subtitle": "Review freelance cleaners and companies before granting access to Saubio.",
+    "filters": {
+      "status": "Status",
+      "type": "Type"
+    },
+    "status": {
+      "all": "All status",
+      "pending": "Pending review",
+      "approved": "Approved",
+      "rejected": "Rejected"
+    },
+    "type": {
+      "all": "All types",
+      "freelancer": "Freelancer",
+      "company": "Company"
+    },
+    "columns": {
+      "contact": "Contact",
+      "company": "Company",
+      "languages": "Languages",
+      "areas": "Service areas",
+      "message": "Message",
+      "createdAt": "Submitted",
+      "reviewedAt": "Reviewed"
+    },
+    "messageFallback": "No additional details",
+    "empty": "No provider requests match these filters.",
+    "actions": {
+      "approve": "Approve",
+      "reject": "Reject"
+    },
+    "toast": {
+      "approved": "Request approved",
+      "rejected": "Request rejected"
+    }
+  },
+  "adminSupportPage": {
+    "title": "Support pipeline",
+    "subtitle": "Prioritise critical client requests.",
+    "columns": {
+      "subject": "Subject",
+      "priority": "Priority",
+      "status": "Status",
+      "updatedAt": "Updated",
+      "assignee": "Assignee",
+      "requester": "Requester",
+      "channel": "Channel"
+    },
+    "status": {
+      "new": "New",
+      "assigned": "Assigned",
+      "waiting_client": "Waiting client",
+      "resolved": "Resolved"
+    },
+    "priority": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "urgent": "Urgent"
+    },
+    "channel": {
+      "app": "App",
+      "email": "Email",
+      "phone": "Phone"
+    },
+    "empty": "No support requests."
+  },
+  "adminTicketsPage": {
+    "title": "Back-office tickets",
+    "subtitle": "Monitor internal incidents and escalations.",
+    "columns": {
+      "title": "Ticket",
+      "impact": "Impact",
+      "status": "Status",
+      "owner": "Owner",
+      "updatedAt": "Updated",
+      "tags": "Tags"
+    },
+    "impact": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High"
+    },
+    "status": {
+      "triage": "Triage",
+      "investigating": "Investigating",
+      "mitigated": "Mitigated",
+      "resolved": "Resolved"
+    },
+    "empty": "No active tickets."
+  },
+  "adminOperationsPage": {
+    "title": "Operations & Monitoring",
+    "subtitle": "Track the health of Saubio services.",
+    "metricsTitle": "Key indicators",
+    "servicesTitle": "Monitored services",
+    "incidentsTitle": "Active incidents",
+    "analyticsTitle": "Complementary analytics",
+    "status": {
+      "operational": "Operational",
+      "degraded": "Degraded",
+      "partial_outage": "Partial outage",
+      "open": "Open",
+      "monitoring": "Monitoring",
+      "resolved": "Resolved"
+    },
+    "severity": {
+      "minor": "Minor",
+      "major": "Major",
+      "critical": "Critical"
+    },
+    "noIncidents": "No incidents at the moment.",
+    "noServices": "No service configured."
+  },
+  "clientMandates": {
+    "title": "Bank mandates & SEPA history",
+    "subtitle": "Review your SEPA mandates, their status and the PSP events Saubio has received.",
+    "list": {
+      "title": "Saved mandates",
+      "subtitle": "Each mandate authorises a SEPA debit. Make sure it stays active before booking new services.",
+      "empty": "No SEPA mandate on your account yet.",
+      "table": {
+        "reference": "Reference",
+        "status": "Status",
+        "bank": "Bank",
+        "acceptedAt": "Accepted",
+        "syncedAt": "Last sync"
+      }
+    },
+    "events": {
+      "title": "SEPA event log",
+      "subtitle": "Every entry mirrors a webhook received from our PSP. Useful to troubleshoot ongoing or failed payments.",
+      "empty": "No SEPA event recorded yet."
+    },
+    "error": "We couldn’t load your mandates or SEPA history."
+  },
+  "sidebar": {
+    "client": {
+      "mandates": "SEPA mandates"
+    }
+  }
+}

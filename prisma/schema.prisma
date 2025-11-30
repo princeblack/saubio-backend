@@ -1,0 +1,1105 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// --- ENUMS ---
+
+enum UserRole {
+  CLIENT
+  PROVIDER
+  COMPANY
+  EMPLOYEE
+  ADMIN
+}
+
+enum ProviderType {
+  FREELANCER
+  COMPANY
+}
+
+enum ProviderOnboardingStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum BookingMode {
+  MANUAL
+  SMART_MATCH
+}
+
+enum CleaningFrequency {
+  ONCE
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  CONTRACT
+}
+
+enum EcoPreference {
+  STANDARD
+  BIO
+}
+
+enum BookingStatus {
+  DRAFT
+  PENDING_PROVIDER
+  PENDING_CLIENT
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  DISPUTED
+}
+
+enum PaymentStatus {
+  PENDING
+  REQUIRES_ACTION
+  AUTHORIZED
+  CAPTURE_PENDING
+  CAPTURED
+  HELD
+  RELEASED
+  REFUNDED
+  FAILED
+  DISPUTED
+}
+
+enum PayoutBatchStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ProviderPayoutStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+}
+
+enum PayoutBatchTrigger {
+  AUTO
+  MANUAL
+}
+
+enum PaymentMethod {
+  CARD
+  SEPA
+  PAYPAL
+}
+
+enum PaymentProvider {
+  MOLLIE
+  ADYEN
+  OTHER
+}
+
+enum EmailQueueStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum DocumentType {
+  IDENTITY
+  INSURANCE
+  TAX
+  CONTRACT
+  CHECKLIST
+  PHOTO_BEFORE
+  PHOTO_AFTER
+  INVOICE
+  OTHER
+}
+
+enum DocumentReviewStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum IdentityVerificationStatus {
+  NOT_STARTED
+  SUBMITTED
+  VERIFIED
+  REJECTED
+}
+
+enum AdminReviewTarget {
+  DOCUMENT
+  PROVIDER_PROFILE
+  BOOKING
+  PAYMENT
+}
+
+enum AdminReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  ACTION_REQUIRED
+  REFUNDED
+  RESOLVED
+  REJECTED
+}
+
+enum DisputeParticipantRole {
+  CLIENT
+  PROVIDER
+  ADMIN
+}
+
+enum PricingRuleType {
+  BASE_RATE
+  ECO_SURCHARGE
+  LOYALTY_EARN
+  LOYALTY_REDEEM
+}
+
+enum PricingRuleAudience {
+  GENERAL
+  BUSINESS
+}
+
+enum LoyaltyTransactionType {
+  EARN
+  REDEEM
+  ADJUST
+}
+
+/// --- MODELS ---
+
+model User {
+  id              String     @id @default(cuid())
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  email           String     @unique
+  hashedPassword  String?
+  phone           String?
+  firstName       String
+  lastName        String
+  preferredLocale String     @default("de")
+  isActive        Boolean    @default(true)
+  roles           UserRole[]
+
+  providerProfile         ProviderProfile?
+  clientProfile           ClientProfile?
+  employeeProfiles        EmployeeProfile[]
+  companiesOwned          Company[]               @relation("CompanyOwners")
+  companyMemberships      CompanyMember[]
+  bookings                Booking[]               @relation("BookingClient")
+  reviews                 Review[]                @relation("ReviewAuthor")
+  payments                Payment[]               @relation("PaymentClient")
+  documentsUploaded       Document[]              @relation("UserDocuments")
+  bookingAuditEntries     BookingAudit[]          @relation("UserBookingAudits")
+  supportTicketsRequested SupportTicket[]         @relation("TicketRequester")
+  supportTicketsAssigned  SupportTicket[]         @relation("TicketAssignee")
+  supportMessages         SupportMessage[]        @relation("UserSupportMessages")
+  notifications           Notification[]
+  notificationPreference  NotificationPreference? @relation("UserNotificationPreference")
+  profileAudits           UserProfileAudit[]
+  refreshTokens           RefreshToken[]
+  preference              UserPreference?
+  paymentMandates         PaymentMandate[]
+  loyaltyBalance          LoyaltyBalance?
+  documentReviews         Document[]              @relation("DocumentReviewer")
+  adminReviews            AdminReview[]
+  disputesOpened          Dispute[]               @relation("DisputeOpenedBy")
+  disputesAssigned        Dispute[]               @relation("DisputeAssigned")
+  disputeMessages         DisputeMessage[]        @relation("UserDisputeMessages")
+}
+
+model ProviderProfile {
+  id                String       @id @default(cuid())
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  user              User         @relation(fields: [userId], references: [id])
+  userId            String       @unique
+  providerType      ProviderType
+  languages         String[]     @default([])
+  serviceAreas      String[]     @default([])
+  serviceZones      ProviderServiceZone[]
+  availabilitySlots ProviderAvailabilitySlot[]
+  timeOffPeriods    ProviderTimeOff[]
+  serviceCategories String[]     @default([])
+  hourlyRateCents   Int
+  offersEco         Boolean      @default(false)
+  bio               String?
+  yearsExperience   Int?
+  ratingAverage     Float?       @default(0)
+  ratingCount       Int?         @default(0)
+  payoutMethod      String?
+  payoutLast4       String?
+  payoutReady       Boolean      @default(false)
+  kycStatus         String?      @default("pending")
+  acceptsAnimals    Boolean      @default(false)
+  gender            String?
+  birthDate         DateTime?
+  birthCity         String?
+  birthCountry      String?
+  nationality       String?
+  termsAcceptedAt   DateTime?
+  addressStreetLine1 String?
+  addressStreetLine2 String?
+  addressPostalCode String?
+  addressCity       String?
+  addressRegion     String?
+  onboardingStatus  String       @default("account_created")
+  identityCompletedAt DateTime?
+  addressCompletedAt DateTime?
+  profileCompletedAt DateTime?
+  pricingCompletedAt DateTime?
+  phoneVerifiedAt   DateTime?
+  pendingPhoneNumber String?
+  phoneVerificationCode String?
+  phoneVerificationExpiresAt DateTime?
+  identityVerifiedAt DateTime?
+  identityVerificationStatus IdentityVerificationStatus @default(NOT_STARTED)
+  identityVerificationReviewer String?
+  identityVerificationReviewedAt DateTime?
+  identityVerificationNotes String?
+  onfidoApplicantId String?
+  onfidoWorkflowRunId String?
+  onfidoCheckId String?
+  onfidoReportIds String[] @default([])
+  signupFeePaidAt DateTime?
+  welcomeSessionCompletedAt DateTime?
+
+  documents Document[]          @relation("ProviderDocuments")
+  bookings  BookingAssignment[]
+  reviews   Review[]            @relation("ProviderReviews")
+  payouts   ProviderPayout[]
+  teamsOwned ProviderTeam[]     @relation("ProviderTeamOwner")
+  teamMemberships ProviderTeamMember[]
+  bookingLocks BookingTeamLock[]
+  invitations BookingInvitation[]
+}
+
+model PayoutBatch {
+  id             String          @id @default(cuid())
+  createdAt      DateTime        @default(now())
+  scheduledFor   DateTime
+  status         PayoutBatchStatus @default(PENDING)
+  trigger        PayoutBatchTrigger @default(AUTO)
+  note           String?
+
+  payouts        ProviderPayout[]
+}
+
+model ProviderPayout {
+  id             String   @id @default(cuid())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  batch          PayoutBatch @relation(fields: [batchId], references: [id])
+  batchId        String
+  provider       ProviderProfile @relation(fields: [providerId], references: [id])
+  providerId     String
+  amountCents    Int
+  currency       String  @default("EUR")
+  status         ProviderPayoutStatus @default(PENDING)
+  externalReference String?
+  availableOn    DateTime?
+  releasedAt     DateTime?
+  missions       Json
+
+  documents      Document[]
+  distributions  PaymentDistribution[]
+}
+
+model ProviderOnboardingRequest {
+  id           String                    @id @default(cuid())
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+  type         ProviderType
+  contactName  String
+  companyName  String?
+  email        String
+  phone        String?
+  languages    String[]
+  serviceAreas String[]
+  message      String?
+  status       ProviderOnboardingStatus @default(PENDING)
+  reviewer     String?
+  reviewedAt   DateTime?
+}
+
+model Company {
+  id           String   @id @default(cuid())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  name         String
+  vatNumber    String?
+  legalForm    String?
+  billingEmail String
+  phone        String?
+  streetLine1  String
+  streetLine2  String?
+  postalCode   String
+  city         String
+  countryCode  String
+  locales      String[] @default(["de"])
+  ecoPolicy    String?
+  owner        User?    @relation("CompanyOwners", fields: [ownerId], references: [id])
+  ownerId      String?
+
+  members          CompanyMember[]
+  bookings         Booking[]         @relation("BookingCompany")
+  employeeProfiles EmployeeProfile[]
+}
+
+model CompanyMember {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  company     Company  @relation(fields: [companyId], references: [id])
+  companyId   String
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+  role        String
+  permissions String[] @default([])
+
+  @@unique([companyId, userId])
+}
+
+model EmployeeProfile {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  company     Company  @relation(fields: [companyId], references: [id])
+  companyId   String
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+  role        String
+  permissions String[] @default([])
+}
+
+model ClientProfile {
+  id                 String   @id @default(cuid())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User     @relation(fields: [userId], references: [id])
+  userId             String   @unique
+  defaultLocale      String   @default("de")
+  favouriteProviders String[] @default([])
+  loyaltyPoints      Int      @default(0)
+  externalCustomerId String?  @unique
+  defaultPaymentMethodId String?
+
+  addresses ClientAddress[]
+}
+
+model ClientAddress {
+  id          String        @id @default(cuid())
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  profile     ClientProfile @relation(fields: [profileId], references: [id])
+  profileId   String
+  label       String
+  streetLine1 String
+  streetLine2 String?
+  postalCode  String
+  city        String
+  countryCode String
+  accessNotes String?
+  latitude    Float?
+  longitude   Float?
+}
+
+model SupportTicket {
+  id          String              @id @default(cuid())
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  status      SupportStatus       @default(OPEN)
+  priority    SupportPriority     @default(MEDIUM)
+  category    SupportCategory     @default(OTHER)
+  subject     String
+  description String
+  requester   User                @relation("TicketRequester", fields: [requesterId], references: [id])
+  requesterId String
+  assignee    User?               @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  assigneeId  String?
+  dueAt       DateTime?
+  messages    SupportMessage[]
+  attachments SupportAttachment[]
+}
+
+model SupportMessage {
+  id          String              @id @default(cuid())
+  createdAt   DateTime            @default(now())
+  content     String
+  internal    Boolean             @default(false)
+  ticket      SupportTicket       @relation(fields: [ticketId], references: [id])
+  ticketId    String
+  author      User                @relation("UserSupportMessages", fields: [authorId], references: [id])
+  authorId    String
+  attachments SupportAttachment[]
+}
+
+model SupportAttachment {
+  id              String         @id @default(cuid())
+  createdAt       DateTime       @default(now())
+  url             String
+  filename        String
+  message         SupportMessage @relation(fields: [messageId], references: [id])
+  messageId       String
+  SupportTicket   SupportTicket? @relation(fields: [supportTicketId], references: [id])
+  supportTicketId String?
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  createdAt DateTime         @default(now())
+  readAt    DateTime?
+  type      NotificationType
+  payload   Json
+  user      User             @relation(fields: [userId], references: [id])
+  userId    String
+}
+
+model NotificationPreference {
+  id         String                @id @default(cuid())
+  user       User                  @relation("UserNotificationPreference", fields: [userId], references: [id])
+  userId     String                @unique
+  channels   NotificationChannel[] @default([IN_APP])
+  language   String?
+  mutedTypes NotificationType[]
+}
+
+model UserProfileAudit {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  field     String
+  oldValue  String?
+  newValue  String?
+}
+
+enum SupportStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+
+enum SupportPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum SupportCategory {
+  ONBOARDING
+  BILLING
+  INCIDENT
+  FEATURE_REQUEST
+  OTHER
+}
+
+enum NotificationType {
+  BOOKING_STATUS
+  BOOKING_ASSIGNMENT
+  BOOKING_CANCELLATION
+  BILLING
+  SUPPORT_UPDATE
+  MATCHING_PROGRESS
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  PUSH
+}
+
+enum DigestFrequency {
+  NEVER
+  DAILY
+  WEEKLY
+}
+
+model UserPreference {
+  id               String           @id @default(cuid())
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  marketingEmails  Boolean          @default(false)
+  productUpdates   Boolean          @default(true)
+  enableDarkMode   Boolean          @default(false)
+  digestFrequency  DigestFrequency  @default(WEEKLY)
+  user             User             @relation(fields: [userId], references: [id])
+  userId           String           @unique
+}
+
+model Document {
+  id           String           @id @default(cuid())
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  type         DocumentType
+  url          String
+  name         String?
+  metadata     Json?
+  uploadedBy   User?            @relation("UserDocuments", fields: [uploadedById], references: [id])
+  uploadedById String?
+  provider     ProviderProfile? @relation("ProviderDocuments", fields: [providerId], references: [id])
+  providerId   String?
+  booking      Booking?         @relation("BookingDocuments", fields: [bookingId], references: [id])
+  bookingId    String?
+  providerPayout ProviderPayout? @relation(fields: [providerPayoutId], references: [id])
+  providerPayoutId String?
+  invoice      Invoice?
+  reviewStatus DocumentReviewStatus @default(PENDING)
+  reviewNotes  String?
+  reviewedAt   DateTime?
+  reviewer     User?            @relation("DocumentReviewer", fields: [reviewerId], references: [id])
+  reviewerId   String?
+  adminReviews AdminReview[]
+}
+
+model AdminReview {
+  id         String             @id @default(cuid())
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+  type       AdminReviewTarget
+  status     AdminReviewStatus  @default(PENDING)
+  targetId   String
+  targetLabel String?
+  notes      String?
+  metadata   Json?
+  reviewer   User?              @relation(fields: [reviewerId], references: [id])
+  reviewerId String?
+  document   Document?          @relation(fields: [documentId], references: [id])
+  documentId String?
+}
+
+model Booking {
+  id                   String            @id @default(cuid())
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  client               User?             @relation("BookingClient", fields: [clientId], references: [id])
+  clientId             String?
+  company              Company?          @relation("BookingCompany", fields: [companyId], references: [id])
+  companyId            String?
+  service              String
+  surfacesSquareMeters Int
+  startAt              DateTime
+  endAt                DateTime
+  frequency            CleaningFrequency
+  mode                 BookingMode
+  ecoPreference        EcoPreference
+  addressStreetLine1   String
+  addressStreetLine2   String?
+  addressPostalCode    String
+  addressCity          String
+  addressCountryCode   String
+  addressAccessNotes   String?
+  status               BookingStatus     @default(PENDING_PROVIDER)
+  pricingSubtotalCents Int
+  pricingEcoCents      Int
+  pricingLoyaltyCents  Int             @default(0)
+  pricingExtrasCents   Int
+  pricingTaxCents      Int
+  pricingCurrency      String            @default("EUR")
+  pricingTotalCents    Int
+  notes                String?
+  opsNotes             String?
+  providerNotes        String?
+  reminderAt           DateTime?
+  reminderNotes        String?
+  requiredProviders    Int               @default(1)
+  preferredTeam        ProviderTeam?     @relation("BookingPreferredTeam", fields: [preferredTeamId], references: [id])
+  preferredTeamId      String?
+  assignedTeam         ProviderTeam?     @relation("BookingAssignedTeam", fields: [assignedTeamId], references: [id])
+  assignedTeamId       String?
+  matchingRetryCount   Int               @default(0)
+  fallbackEscalatedAt  DateTime?
+  fallbackRequestedAt  DateTime?
+  fallbackTeamCandidate   ProviderTeam? @relation("BookingFallbackTeam", fields: [fallbackTeamCandidateId], references: [id])
+  fallbackTeamCandidateId String?
+
+  assignments BookingAssignment[]
+  auditLog    BookingAudit[]
+  attachments Document[]          @relation("BookingDocuments")
+  payments    Payment[]
+  reviews     Review[]
+  invoices    Invoice[]
+  loyaltyTransactions LoyaltyTransaction[]
+  bookingLocks BookingTeamLock[]
+  disputes    Dispute[]
+  invitations BookingInvitation[]
+  shortNotice Boolean          @default(false)
+  leadTimeDays Int?
+  shortNoticeDepositCents Int?
+  guestToken  String?
+  claimedAt   DateTime?
+}
+
+enum BookingInvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+model BookingInvitation {
+  id          String                   @id @default(cuid())
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+  booking     Booking                  @relation(fields: [bookingId], references: [id])
+  bookingId   String
+  provider    ProviderProfile          @relation(fields: [providerId], references: [id])
+  providerId  String
+  status      BookingInvitationStatus  @default(PENDING)
+  respondedAt DateTime?
+  metadata    Json?
+
+  @@unique([bookingId, providerId])
+}
+
+model BookingAssignment {
+  id         String          @id @default(cuid())
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  booking    Booking         @relation(fields: [bookingId], references: [id])
+  bookingId  String
+  provider   ProviderProfile @relation(fields: [providerId], references: [id])
+  providerId String
+  team       ProviderTeam?   @relation(fields: [teamId], references: [id])
+  teamId     String?
+  status     String          @default("pending")
+
+  @@unique([bookingId, providerId])
+}
+
+model BookingAudit {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  booking   Booking  @relation(fields: [bookingId], references: [id])
+  bookingId String
+  actor     User?    @relation("UserBookingAudits", fields: [actorId], references: [id])
+  actorId   String?
+  action    String
+  metadata  Json?
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  booking           Booking       @relation(fields: [bookingId], references: [id])
+  bookingId         String
+  client            User          @relation("PaymentClient", fields: [clientId], references: [id])
+  clientId          String
+  amountCents       Int
+  currency          String        @default("EUR")
+  platformFeeCents  Int           @default(0)
+  status            PaymentStatus
+  method            PaymentMethod?
+  provider          PaymentProvider @default(MOLLIE)
+  externalReference String?
+  externalCustomerId String?
+  externalPaymentIntentId String?
+  externalPaymentMethodId String?
+  externalSetupIntentId String?
+  externalMandateId   String?
+  paymentMethodSnapshot Json?
+  billingName       String?
+  billingEmail      String?
+  authorizedAt      DateTime?
+  capturedAt        DateTime?
+  releasedAt        DateTime?
+  refundedAt        DateTime?
+  cancellationReason String?
+  occurredAt        DateTime
+
+  distributions PaymentDistribution[]
+  events        PaymentEvent[]
+  invoice       Invoice?
+  loyaltyTransactions LoyaltyTransaction[]
+  disputes      Dispute[]
+
+  @@unique([bookingId])
+}
+
+model PaymentMandate {
+  id                   String         @id @default(cuid())
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  client               User           @relation(fields: [clientId], references: [id])
+  clientId             String
+  provider             PaymentProvider @default(MOLLIE)
+  externalMandateId    String         @unique
+  externalPaymentMethodId String?
+  method               PaymentMethod?
+  status               String         @default("pending")
+  reference            String?
+  scheme               String?
+  bankCountry          String?
+  bankCode             String?
+  last4                String?
+  fingerprint          String?
+  url                  String?
+  usage                String?
+  acceptedAt           DateTime?
+  customerIp           String?
+  customerUserAgent    String?
+  lastSyncedAt         DateTime?
+  revokedAt            DateTime?
+  metadata             Json?
+}
+
+model PaymentDistribution {
+  id              String   @id @default(cuid())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  payment         Payment  @relation(fields: [paymentId], references: [id])
+  paymentId       String
+  beneficiaryId   String
+  beneficiaryType String
+  amountCents     Int
+  currency        String   @default("EUR")
+  externalReference String?
+  availableOn     DateTime?
+  releasedAt      DateTime?
+  payoutStatus    String   @default("pending")
+  providerPayout  ProviderPayout? @relation(fields: [providerPayoutId], references: [id])
+  providerPayoutId String?
+}
+
+model PaymentEvent {
+  id        String          @id @default(cuid())
+  createdAt DateTime        @default(now())
+  payment   Payment?        @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  paymentId String?
+  provider  PaymentProvider @default(MOLLIE)
+  type      String
+  payload   Json
+
+  @@index([paymentId])
+}
+
+model Dispute {
+  id               String        @id @default(cuid())
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  booking          Booking       @relation(fields: [bookingId], references: [id])
+  bookingId        String
+  payment          Payment?      @relation(fields: [paymentId], references: [id])
+  paymentId        String?
+  status           DisputeStatus @default(OPEN)
+  reason           String
+  description      String?
+  openedBy         User?         @relation("DisputeOpenedBy", fields: [openedById], references: [id])
+  openedById       String?
+  assignedTo       User?         @relation("DisputeAssigned", fields: [assignedToId], references: [id])
+  assignedToId     String?
+  resolution       String?
+  refundAmountCents Int?
+  refundCurrency   String?       @default("EUR")
+  refundProcessedAt DateTime?
+  resolvedAt       DateTime?
+  adminNotes       String?
+  messages         DisputeMessage[]
+
+  @@index([bookingId])
+  @@index([paymentId])
+  @@index([status])
+}
+
+model DisputeMessage {
+  id        String                  @id @default(cuid())
+  createdAt DateTime                @default(now())
+  dispute   Dispute                 @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+  disputeId String
+  author    User?                   @relation("UserDisputeMessages", fields: [authorId], references: [id])
+  authorId  String?
+  role      DisputeParticipantRole
+  message   String
+  attachments Json?
+
+  @@index([disputeId])
+}
+
+model Invoice {
+  id                  String     @id @default(cuid())
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  invoiceNumber       String     @unique
+  issuedAt            DateTime
+  status              String     @default("issued")
+  currency            String     @default("EUR")
+  subtotalCents       Int
+  ecoSurchargeCents   Int        @default(0)
+  loyaltyCreditsCents Int        @default(0)
+  extrasCents         Int        @default(0)
+  taxCents            Int        @default(0)
+  totalCents          Int
+  booking             Booking    @relation(fields: [bookingId], references: [id])
+  bookingId           String
+  payment             Payment?   @relation(fields: [paymentId], references: [id])
+  paymentId           String?    @unique
+  document            Document?  @relation(fields: [documentId], references: [id])
+  documentId          String?    @unique
+
+  @@index([bookingId])
+}
+
+model PricingRule {
+  id              String              @id @default(cuid())
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  code            String              @unique
+  type            PricingRuleType
+  audience        PricingRuleAudience @default(GENERAL)
+  description     String?
+  amountCents     Int?
+  percentageBps   Int?
+  multiplier      Float?
+  minSquareMeters Int?
+  maxSquareMeters Int?
+  isActive        Boolean             @default(true)
+  priority        Int                 @default(100)
+}
+
+model LoyaltyBalance {
+  id               String               @id @default(cuid())
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  client           User                 @relation(fields: [clientId], references: [id])
+  clientId         String               @unique
+  points           Int                  @default(0)
+  lifetimeEarned   Int                  @default(0)
+  lifetimeRedeemed Int                  @default(0)
+  lastEarnedAt     DateTime?
+  lastRedeemedAt   DateTime?
+  transactions     LoyaltyTransaction[]
+}
+
+model LoyaltyTransaction {
+  id         String                 @id @default(cuid())
+  createdAt  DateTime               @default(now())
+  balance    LoyaltyBalance         @relation(fields: [balanceId], references: [id], onDelete: Cascade)
+  balanceId  String
+  type       LoyaltyTransactionType
+  points     Int
+  booking    Booking?               @relation(fields: [bookingId], references: [id])
+  bookingId  String?
+  payment    Payment?               @relation(fields: [paymentId], references: [id])
+  paymentId  String?
+  metadata   Json?
+
+  @@index([balanceId])
+  @@index([bookingId])
+  @@index([paymentId])
+}
+
+model EmailQueue {
+  id          String            @id @default(cuid())
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  to          String
+  template    String
+  payload     Json
+  status      EmailQueueStatus  @default(PENDING)
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  error       String?
+
+  @@index([status, scheduledAt])
+}
+
+model Review {
+  id               String          @id @default(cuid())
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  booking          Booking         @relation(fields: [bookingId], references: [id])
+  bookingId        String
+  author           User            @relation("ReviewAuthor", fields: [authorId], references: [id])
+  authorId         String
+  targetProvider   ProviderProfile @relation("ProviderReviews", fields: [targetProviderId], references: [id])
+  targetProviderId String
+  score            Int
+  comment          String?
+  ecoCompliance    Boolean
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  user      User      @relation(fields: [userId], references: [id])
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  revokedAt DateTime?
+  userAgent String?
+  ipAddress String?
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model ProviderServiceZone {
+  id          String          @id @default(cuid())
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  provider    ProviderProfile @relation(fields: [providerId], references: [id])
+  providerId  String
+  name        String
+  postalCode  String?
+  city        String?
+  district    String?
+  countryCode String?
+  latitude    Float?
+  longitude   Float?
+  radiusKm    Float?          @default(5)
+}
+
+model ProviderAvailabilitySlot {
+  id          String          @id @default(cuid())
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  provider    ProviderProfile @relation(fields: [providerId], references: [id])
+  providerId  String
+  weekday     Int
+  startMinutes Int
+  endMinutes  Int
+  timezone    String          @default("Europe/Berlin")
+  isActive    Boolean         @default(true)
+
+  @@index([providerId, weekday])
+}
+
+model ProviderTimeOff {
+  id         String          @id @default(cuid())
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  provider   ProviderProfile @relation(fields: [providerId], references: [id])
+  providerId String
+  startAt    DateTime
+  endAt      DateTime
+  reason     String?
+
+  @@index([providerId, startAt])
+}
+
+model ProviderTeam {
+  id               String               @id @default(cuid())
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  owner            ProviderProfile      @relation("ProviderTeamOwner", fields: [ownerId], references: [id])
+  ownerId          String
+  name             String
+  description      String?
+  serviceCategories String[]            @default([])
+  preferredSize    Int?
+  isActive         Boolean              @default(true)
+  notes            String?
+  defaultDailyCapacity Int?
+  timezone         String?
+
+  members          ProviderTeamMember[]
+  preferredBookings Booking[]           @relation("BookingPreferredTeam")
+  assignedBookings  Booking[]           @relation("BookingAssignedTeam")
+  assignments       BookingAssignment[]
+  fallbackBookings  Booking[]           @relation("BookingFallbackTeam")
+  plans             TeamPlan[]
+  bookingLocks      BookingTeamLock[]
+}
+
+model ProviderTeamMember {
+  id         String          @id @default(cuid())
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  team       ProviderTeam    @relation(fields: [teamId], references: [id])
+  teamId     String
+  provider   ProviderProfile @relation(fields: [providerId], references: [id])
+  providerId String
+  role       String?
+  isLead     Boolean         @default(false)
+  orderIndex Int             @default(0)
+
+  @@unique([teamId, providerId])
+}
+
+enum BookingTeamLockStatus {
+  HELD
+  CONFIRMED
+  RELEASED
+}
+
+model TeamPlan {
+  id              String      @id @default(cuid())
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  providerTeam    ProviderTeam @relation(fields: [providerTeamId], references: [id], onDelete: Cascade)
+  providerTeamId  String
+  date            DateTime
+  capacitySlots   Int
+  capacityBooked  Int         @default(0)
+  notes           String?
+
+  slots           TeamPlanSlot[]
+
+  @@unique([providerTeamId, date])
+}
+
+model TeamPlanSlot {
+  id         String    @id @default(cuid())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  teamPlan   TeamPlan  @relation(fields: [teamPlanId], references: [id], onDelete: Cascade)
+  teamPlanId String
+  startAt    DateTime
+  endAt      DateTime
+  capacity   Int
+  booked     Int       @default(0)
+
+  locks      BookingTeamLock[]
+}
+
+model BookingTeamLock {
+  id             String                @id @default(cuid())
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  booking        Booking               @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId      String
+  providerTeam   ProviderTeam?         @relation(fields: [providerTeamId], references: [id], onDelete: Cascade)
+  providerTeamId String?
+  provider       ProviderProfile?      @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  providerId     String?
+  teamPlanSlot   TeamPlanSlot?         @relation(fields: [teamPlanSlotId], references: [id], onDelete: Cascade)
+  teamPlanSlotId String?
+  lockedCount    Int                   @default(1)
+  status         BookingTeamLockStatus @default(HELD)
+  expiresAt      DateTime
+
+  @@unique([bookingId, providerId])
+}
+
+model MatchingConfig {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  weightsJson   Json?
+  distanceMaxKm Float    @default(20)
+  teamBonusJson Json?
+}

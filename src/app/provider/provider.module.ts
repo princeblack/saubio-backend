@@ -1,0 +1,16 @@
+import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
+import { ProviderController } from './provider.controller';
+import { ProviderService } from './provider.service';
+import { BookingsModule } from '../bookings/bookings.module';
+import { PaymentsModule } from '../payments/payments.module';
+import { ProviderDirectoryController } from './provider-directory.controller';
+import { SmsService } from './sms.service';
+import { NotificationsModule } from '../notifications/notifications.module';
+
+@Module({
+  imports: [AuthModule, BookingsModule, PaymentsModule, NotificationsModule],
+  controllers: [ProviderController, ProviderDirectoryController],
+  providers: [ProviderService, SmsService],
+})
+export class ProviderModule {}

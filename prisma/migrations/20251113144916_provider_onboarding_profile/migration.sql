@@ -1,0 +1,17 @@
+-- AlterTable
+ALTER TABLE "ProviderProfile" ADD COLUMN     "addressCity" TEXT,
+ADD COLUMN     "addressCompletedAt" TIMESTAMP(3),
+ADD COLUMN     "addressPostalCode" TEXT,
+ADD COLUMN     "addressRegion" TEXT,
+ADD COLUMN     "addressStreetLine1" TEXT,
+ADD COLUMN     "addressStreetLine2" TEXT,
+ADD COLUMN     "birthCity" TEXT,
+ADD COLUMN     "birthCountry" TEXT,
+ADD COLUMN     "birthDate" TIMESTAMP(3),
+ADD COLUMN     "gender" TEXT,
+ADD COLUMN     "identityCompletedAt" TIMESTAMP(3),
+ADD COLUMN     "nationality" TEXT,
+ADD COLUMN     "onboardingStatus" TEXT NOT NULL DEFAULT 'account_created',
+ADD COLUMN     "phoneVerifiedAt" TIMESTAMP(3),
+ADD COLUMN     "profileCompletedAt" TIMESTAMP(3),
+ADD COLUMN     "termsAcceptedAt" TIMESTAMP(3);
