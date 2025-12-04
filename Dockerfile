@@ -16,8 +16,9 @@ WORKDIR /app
 
 COPY --from=build /app/package*.json ./
 RUN npm ci --omit=dev
+COPY --from=build /app/prisma ./prisma
+COPY .env .env
+RUN npx prisma generate
 COPY --from=build /app/dist ./dist
-COPY ./.env ./.env
-
 EXPOSE 3001
-CMD ["node", "dist/main.js"]
+CMD ["node", "dist/src/main.js"]
