@@ -1,0 +1,64 @@
+name: Backend CI/CD
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint --if-present
+
+      - name: Run tests
+        run: npm run test -- --runInBand
+
+      - name: Build
+        run: npm run build
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            set -euo pipefail
+            cd /var/www/saubio-backend
+            BACKUP=""
+            if [ -f .env ]; then
+              BACKUP="/tmp/saubio-backend-env-$(date +%s)"
+              cp .env "$BACKUP"
+            fi
+            git fetch origin main
+            git reset --hard origin/main
+            if [ -n "$BACKUP" ] && [ -f "$BACKUP" ]; then
+              mv "$BACKUP" .env
+            fi
+
+            cd /var/www/saubio-infra
+            git fetch origin main
+            git reset --hard origin/main
+            docker compose up -d --build backend

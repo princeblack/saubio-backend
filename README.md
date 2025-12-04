@@ -55,6 +55,25 @@ dist/               # Build output (gitignored)
 3. Start the API with `npm run start:dev`.
 4. Run unit tests before committing (`npm run test`).
 
+## CI/CD
+
+GitHub Actions workflow: `.github/workflows/backend-ci.yml`
+
+- Runs on every push/PR to `main`.
+- Steps: `npm ci`, lint, Jest, `npm run build`.
+- On `main`, deploys via SSH by pulling `/var/www/saubio-backend` + `/var/www/saubio-infra` and running `docker compose up -d --build backend`.
+
+Secrets to configure in the repository:
+
+| Secret | Description |
+| --- | --- |
+| `SSH_HOST` | Server IP or hostname (e.g., `srv1164404.hstgr.cloud`). |
+| `SSH_USER` | SSH user (e.g., `root`). |
+| `SSH_KEY` | Private key contents (matching the server’s authorized key). |
+| `SSH_PORT` | Optional SSH port (defaults to `22`). |
+
+The workflow temporarily backs up `/var/www/saubio-backend/.env` during deploys so you can keep server-specific secrets untouched.
+
 ## Git Repository Setup
 
 The backend lives in its own Git repository (e.g., `saubio-backend`). Initialize and push:
