@@ -268,6 +268,26 @@ export class ProviderService {
       }));
   }
 
+  async listServiceCities(): Promise<string[]> {
+    const profiles = await this.prisma.providerProfile.findMany({
+      where: { user: { isActive: true } },
+      select: { serviceAreas: true },
+    });
+
+    const unique = new Set<string>();
+    profiles.forEach((profile) => {
+      profile.serviceAreas.forEach((area) => {
+        if (!area) return;
+        const trimmed = area.trim();
+        if (!trimmed) return;
+        const normalized = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+        unique.add(normalized);
+      });
+    });
+
+    return Array.from(unique).sort((a, b) => a.localeCompare(b, 'de-DE', { sensitivity: 'base' }));
+  }
+
   async listShortNoticeInvitations(user: User): Promise<ProviderBookingInvitation[]> {
     await this.assertOnboardingComplete(user);
     const profile = await this.requireProviderProfile(user.id);

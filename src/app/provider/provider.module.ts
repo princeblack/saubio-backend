@@ -5,12 +5,13 @@ import { ProviderService } from './provider.service';
 import { BookingsModule } from '../bookings/bookings.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { ProviderDirectoryController } from './provider-directory.controller';
+import { ProviderCitiesController } from './provider-cities.controller';
 import { SmsService } from './sms.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [AuthModule, BookingsModule, PaymentsModule, NotificationsModule],
-  controllers: [ProviderController, ProviderDirectoryController],
+  controllers: [ProviderController, ProviderDirectoryController, ProviderCitiesController],
   providers: [ProviderService, SmsService],
 })
 export class ProviderModule {}
