@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import {
@@ -37,6 +38,7 @@ import type {
   PaymentMandate as PrismaPaymentMandate,
 } from '@prisma/client';
 import { ProviderOnboardingDto } from './dto/provider-onboarding.dto';
+import { UpdateProviderPayoutStatusDto } from './dto/update-provider-payout-status.dto';
 import type { AppEnvironmentConfig } from '../config/configuration';
 import { ConfigService } from '@nestjs/config';
 import { InvoiceService } from './invoice/invoice.service';
@@ -138,6 +140,8 @@ type BillingRecipient = {
   lastName?: string | null;
 };
 
+type ProviderPayoutActivationStatus = 'pending' | 'in_review' | 'verified' | 'rejected';
+
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
@@ -179,27 +183,85 @@ export class PaymentsService {
   }
 
   async startProviderOnboardingForUser(user: User): Promise<ProviderOnboardingResponse> {
+    if (!this.mollieService.isEnabled()) {
+      throw new ConflictException('MOLLIE_NOT_CONFIGURED');
+    }
     const profile = await this.prisma.providerProfile.findUnique({
       where: { userId: user.id },
-      select: { id: true, payoutMethod: true, kycStatus: true },
+      select: {
+        id: true,
+        payoutReady: true,
+        payoutMethod: true,
+        payoutLast4: true,
+        kycStatus: true,
+        user: {
+          select: { email: true, firstName: true, lastName: true },
+        },
+      },
     });
     if (!profile) {
       throw new NotFoundException('PROVIDER_PROFILE_NOT_FOUND');
     }
-    await this.markProviderPayoutReady(profile.id, profile.payoutMethod, profile.kycStatus);
-    return this.buildProviderOnboardingResponse();
+    const payoutStatus = this.normalizePayoutStatus(profile.kycStatus);
+    if (payoutStatus === 'verified') {
+      if (!profile.payoutReady) {
+        await this.transitionProviderPayoutStatus(profile.id, 'verified', {
+          method: profile.payoutMethod,
+          last4: profile.payoutLast4,
+        });
+      }
+    } else if (payoutStatus === 'rejected') {
+      await this.transitionProviderPayoutStatus(profile.id, 'pending');
+    } else {
+      await this.transitionProviderPayoutStatus(profile.id, payoutStatus);
+    }
+    const displayName = `${profile.user.firstName ?? ''} ${profile.user.lastName ?? ''}`.trim() || undefined;
+    return this.buildProviderOnboardingResponse({
+      providerId: profile.id,
+      email: profile.user.email,
+      name: displayName,
+    });
   }
 
   async startProviderOnboardingByAdmin(payload: ProviderOnboardingDto): Promise<ProviderOnboardingResponse> {
+    if (!this.mollieService.isEnabled()) {
+      throw new ConflictException('MOLLIE_NOT_CONFIGURED');
+    }
     const profile = await this.prisma.providerProfile.findUnique({
       where: { id: payload.providerId },
-      select: { id: true, payoutMethod: true, kycStatus: true },
+      select: {
+        id: true,
+        payoutReady: true,
+        payoutMethod: true,
+        payoutLast4: true,
+        kycStatus: true,
+        user: {
+          select: { email: true, firstName: true, lastName: true },
+        },
+      },
     });
     if (!profile) {
       throw new NotFoundException('PROVIDER_PROFILE_NOT_FOUND');
     }
-    await this.markProviderPayoutReady(profile.id, profile.payoutMethod, profile.kycStatus);
-    return this.buildProviderOnboardingResponse(payload.providerId);
+    const payoutStatus = this.normalizePayoutStatus(profile.kycStatus);
+    if (payoutStatus === 'verified') {
+      if (!profile.payoutReady) {
+        await this.transitionProviderPayoutStatus(profile.id, 'verified', {
+          method: profile.payoutMethod,
+          last4: profile.payoutLast4,
+        });
+      }
+    } else if (payoutStatus === 'rejected') {
+      await this.transitionProviderPayoutStatus(profile.id, 'pending');
+    } else {
+      await this.transitionProviderPayoutStatus(profile.id, payoutStatus);
+    }
+    const displayName = `${profile.user.firstName ?? ''} ${profile.user.lastName ?? ''}`.trim() || undefined;
+    return this.buildProviderOnboardingResponse({
+      providerId: profile.id,
+      email: profile.user.email,
+      name: displayName,
+    });
   }
 
   async createManualPayoutBatch(scheduledFor?: Date, note?: string) {
@@ -210,19 +272,101 @@ export class PaymentsService {
     });
   }
 
-  private async markProviderPayoutReady(
-    providerProfileId: string,
-    payoutMethod?: string | null,
-    currentKycStatus?: string | null
-  ) {
-    const updateData: Prisma.ProviderProfileUpdateInput = {
-      payoutReady: true,
-    };
-    if (!payoutMethod) {
-      updateData.payoutMethod = 'bank_transfer';
+  async updateProviderPayoutStatus(providerId: string, payload: UpdateProviderPayoutStatusDto) {
+    const profile = await this.prisma.providerProfile.findUnique({ where: { id: providerId } });
+    if (!profile) {
+      throw new NotFoundException('PROVIDER_PROFILE_NOT_FOUND');
     }
-    if (currentKycStatus !== 'verified') {
-      updateData.kycStatus = 'verified';
+    await this.transitionProviderPayoutStatus(providerId, payload.status, {
+      method: payload.payoutMethod,
+      last4: payload.payoutLast4,
+    });
+    const updated = await this.prisma.providerProfile.findUnique({
+      where: { id: providerId },
+      select: {
+        id: true,
+        payoutReady: true,
+        payoutMethod: true,
+        payoutLast4: true,
+        kycStatus: true,
+      },
+    });
+    return {
+      providerId: updated?.id ?? providerId,
+      payoutReady: updated?.payoutReady ?? false,
+      payoutMethod: updated?.payoutMethod ?? null,
+      payoutLast4: updated?.payoutLast4 ?? null,
+      kycStatus: updated?.kycStatus ?? 'pending',
+    };
+  }
+
+  private buildProviderOnboardingResponse(options: {
+    providerId: string;
+    email: string;
+    name?: string;
+  }): ProviderOnboardingResponse {
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const configured =
+      this.configService.get('app.mollieProviderOnboardingUrl' as keyof AppEnvironmentConfig) ?? '';
+    const fallbackUrl = 'https://www.mollie.com/dashboard/onboarding';
+    const normalizedBase = configured.trim().length ? configured.trim() : fallbackUrl;
+    const absoluteBase = /^https?:\/\//i.test(normalizedBase)
+      ? normalizedBase
+      : `${this.getAppBaseUrl()}${normalizedBase.startsWith('/') ? normalizedBase : `/${normalizedBase}`}`;
+    let target: URL;
+    try {
+      target = new URL(absoluteBase);
+    } catch {
+      target = new URL(fallbackUrl);
+    }
+    target.searchParams.set('email', options.email);
+    if (options.name) {
+      target.searchParams.set('name', options.name);
+    }
+    target.searchParams.set('providerId', options.providerId);
+    return {
+      url: target.toString(),
+      expiresAt,
+    };
+  }
+
+  private async transitionProviderPayoutStatus(
+    providerProfileId: string,
+    status: ProviderPayoutActivationStatus,
+    options: { method?: string | null; last4?: string | null } = {}
+  ) {
+    const updateData: Prisma.ProviderProfileUpdateInput = {};
+    switch (status) {
+      case 'verified':
+        updateData.payoutReady = true;
+        updateData.kycStatus = 'verified';
+        if (options.method !== undefined) {
+          updateData.payoutMethod = options.method ?? 'bank_transfer';
+        }
+        if (options.last4 !== undefined) {
+          updateData.payoutLast4 = options.last4 ?? null;
+        }
+        break;
+      case 'in_review':
+        updateData.payoutReady = false;
+        updateData.kycStatus = 'in_review';
+        break;
+      case 'rejected':
+        updateData.payoutReady = false;
+        updateData.kycStatus = 'rejected';
+        updateData.payoutMethod = null;
+        updateData.payoutLast4 = null;
+        break;
+      default:
+        updateData.payoutReady = false;
+        updateData.kycStatus = 'pending';
+        if (options.method !== undefined) {
+          updateData.payoutMethod = options.method ?? null;
+        }
+        if (options.last4 !== undefined) {
+          updateData.payoutLast4 = options.last4 ?? null;
+        }
+        break;
     }
     await this.prisma.providerProfile.update({
       where: { id: providerProfileId },
@@ -230,14 +374,41 @@ export class PaymentsService {
     });
   }
 
-  private buildProviderOnboardingResponse(providerId?: string): ProviderOnboardingResponse {
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    return {
-      url: `${this.getAppBaseUrl()}/prestataire/profile?payout=ready${
-        providerId ? `&provider=${providerId}` : ''
-      }`,
-      expiresAt,
-    };
+  private normalizePayoutStatus(status?: string | null): ProviderPayoutActivationStatus {
+    const normalized = (status ?? 'pending').toLowerCase();
+    if (normalized === 'verified' || normalized === 'in_review' || normalized === 'rejected') {
+      return normalized;
+    }
+    return 'pending';
+  }
+
+  private async enrichMollieEvent(event: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const resource = typeof event['resource'] === 'string' ? event['resource'].toLowerCase() : undefined;
+    const metadata = (event['metadata'] as Record<string, unknown> | undefined) ?? null;
+    const metadataNeedsEnrichment =
+      !metadata || typeof metadata !== 'object' || !('providerId' in metadata) || !('purpose' in metadata);
+    if (resource === 'mandate' && !metadataNeedsEnrichment) {
+      return event;
+    }
+    const paymentId = typeof event['id'] === 'string' ? event['id'] : undefined;
+    if (!paymentId) {
+      return event;
+    }
+    try {
+      const payment = await this.mollieService.getPayment(paymentId);
+      this.logger.debug(`[Payments] Enriched Mollie payment ${paymentId} with metadata ${JSON.stringify(payment.metadata ?? {})}`);
+      return {
+        ...payment,
+        resource: payment['resource'] ?? 'payment',
+        type: event['type'] ?? payment.status,
+        originalPayload: event,
+      } as Record<string, unknown>;
+    } catch (error) {
+      this.logger.warn(
+        `Unable to enrich Mollie event ${paymentId}: ${error instanceof Error ? error.message : error}`
+      );
+      return event;
+    }
   }
 
   async listPayoutBatches(limit = 20) {
@@ -429,9 +600,8 @@ export class PaymentsService {
     const amountCents = params.amountCents ?? 25 * 100;
     const amountValue = this.formatAmountValue(amountCents);
     const redirectUrl = `${this.getAppBaseUrl()}/prestataire/onboarding?signupFee=success`;
-    const webhookUrl = `${this.getAppBaseUrl()}/api/payments/webhooks/mollie`;
-
-    const payment = await this.mollieService.createPayment({
+    const webhookUrl = this.getPaymentsWebhookUrl();
+    const payload = {
       amount: { value: amountValue, currency: 'EUR' },
       description: 'Saubio - Frais d’inscription prestataire',
       redirectUrl,
@@ -444,6 +614,30 @@ export class PaymentsService {
         email: params.user.email,
       },
       sequenceType: 'oneoff' as MollieSequenceType,
+    };
+    this.logger.log(
+      `[Payments] Creating provider signup fee payment for provider=${params.providerId} user=${params.user.id}`
+    );
+    this.logger.debug(
+      `[Payments] Signup fee payment payload: ${JSON.stringify({
+        redirectUrl,
+        webhookUrl,
+        metadata: payload.metadata,
+        amountCents,
+      })}`
+    );
+
+    const payment = await this.mollieService.createPayment(payload).catch((error) => {
+      this.logger.error(
+        `[Payments] Failed to create signup fee payment for provider=${params.providerId} webhook=${webhookUrl}`,
+        error instanceof Error ? error.stack : String(error)
+      );
+      throw new UnprocessableEntityException({
+        code: 'PROVIDER_SIGNUP_FEE_PAYMENT_FAILED',
+        message:
+          'Le paiement n’a pas pu être initialisé. Vérifiez votre connexion ou réessayez dans quelques instants.',
+        details: error instanceof Error ? error.message : error,
+      });
     });
 
     return {
@@ -581,27 +775,72 @@ export class PaymentsService {
   }
 
   async handleMollieEvent(event: Record<string, unknown>) {
-    const resource = typeof event['resource'] === 'string' ? event['resource'].toLowerCase() : undefined;
-    const type = (event['type'] as string | undefined) ?? (event['id'] as string | undefined) ?? 'mollie.event';
+    const enrichedEvent = await this.enrichMollieEvent(event);
+    this.logger.debug('===== PARSED EVENT (ENRICHED) =====');
+    this.logger.debug(JSON.stringify(enrichedEvent, null, 2));
+    const resource = typeof enrichedEvent['resource'] === 'string' ? enrichedEvent['resource'].toLowerCase() : undefined;
+    const type =
+      (enrichedEvent['type'] as string | undefined) ??
+      (enrichedEvent['id'] as string | undefined) ??
+      (event['id'] as string | undefined) ??
+      'mollie.event';
     const normalizedType = type?.toLowerCase() ?? '';
     const isMandateEvent =
       resource === 'mandate' ||
       normalizedType.includes('mandate') ||
-      (typeof event['_embedded'] === 'object' && event['_embedded'] !== null && 'mandate' in (event['_embedded'] as object));
+      (typeof enrichedEvent['_embedded'] === 'object' &&
+        enrichedEvent['_embedded'] !== null &&
+        'mandate' in (enrichedEvent['_embedded'] as object));
 
-    const metadata = (event['metadata'] as Record<string, unknown> | undefined) ?? {};
+    const metadata = (enrichedEvent['metadata'] as Record<string, unknown> | undefined) ?? {};
 
     if (isMandateEvent) {
-      await this.recordPaymentEvent(PaymentProvider.MOLLIE, type, event);
-      await this.handleMollieMandateEvent(event);
+      await this.recordPaymentEvent(PaymentProvider.MOLLIE, type, enrichedEvent);
+      await this.handleMollieMandateEvent(enrichedEvent);
       return;
     }
 
-    const paymentId = await this.resolvePaymentIdFromMollie(event);
-    await this.recordPaymentEvent(PaymentProvider.MOLLIE, type, event, paymentId ?? undefined);
+    const status = this.normalizeMollieStatus(enrichedEvent, type);
+
+    this.logger.log(
+      `[Payments] Mollie event ${normalizedType || resource || 'unknown'} status=${status ?? 'unknown'} payment=${
+        enrichedEvent['id'] ?? 'unknown'
+      } metadata=${JSON.stringify(metadata ?? {})}`
+    );
+
+    if (
+      status === 'paid' &&
+      metadata &&
+      typeof metadata === 'object' &&
+      metadata['purpose'] === 'provider_signup_fee' &&
+      typeof metadata['providerId'] === 'string'
+    ) {
+      const providerId = metadata['providerId'] as string;
+      const paymentReference = typeof enrichedEvent['id'] === 'string' ? (enrichedEvent['id'] as string) : undefined;
+      this.logger.log(
+        `[Payments] Updating signup fee status: provider=${providerId} payment=${paymentReference ?? 'unknown'}`
+      );
+      const updateResult = await this.prisma.providerProfile.updateMany({
+        where: { id: metadata['providerId'] as string },
+        data: { signupFeePaidAt: new Date() },
+      });
+      this.logger.log(
+        `[Payments] Signup fee update result provider=${providerId} rows=${updateResult.count}`
+      );
+      const refreshed = await this.prisma.providerProfile.findUnique({
+        where: { id: providerId },
+        select: { signupFeePaidAt: true },
+      });
+      this.logger.log(
+        `[Payments] Provider signup fee confirmed via Mollie. provider=${providerId} payment=${paymentReference ?? 'unknown'} paidAt=${refreshed?.signupFeePaidAt}`
+      );
+    }
+
+    const paymentId = await this.resolvePaymentIdFromMollie(enrichedEvent);
+    await this.recordPaymentEvent(PaymentProvider.MOLLIE, type, enrichedEvent, paymentId ?? undefined);
     this.logger.debug(`Received Mollie webhook ${type}`);
 
-    if (!paymentId) {
+    if (!paymentId || !status) {
       return;
     }
 
@@ -612,35 +851,17 @@ export class PaymentsService {
       return;
     }
 
-    const status = this.normalizeMollieStatus(event, type);
-    if (!status) {
-      return;
-    }
-
-    if (
-      status === 'paid' &&
-      metadata &&
-      typeof metadata === 'object' &&
-      metadata['purpose'] === 'provider_signup_fee' &&
-      typeof metadata['providerId'] === 'string'
-    ) {
-      await this.prisma.providerProfile.updateMany({
-        where: { id: metadata['providerId'] as string },
-        data: { signupFeePaidAt: new Date() },
-      });
-    }
-
     if (status === 'paid') {
       const now = new Date();
-      const method = this.mapMollieMethod(event['method']);
+      const method = this.mapMollieMethod(enrichedEvent['method']);
       const updateData: Prisma.PaymentUpdateInput = {
         status: PrismaPaymentStatus.CAPTURED,
         capturedAt: now,
         occurredAt: now,
         ...(method ? { method } : {}),
       };
-      if (typeof event['id'] === 'string' && !payment.externalReference) {
-        updateData.externalReference = event['id'] as string;
+      if (typeof enrichedEvent['id'] === 'string' && !payment.externalReference) {
+        updateData.externalReference = enrichedEvent['id'] as string;
       }
       const updatedPayment = await this.prisma.payment.update({
         where: { id: payment.id },
@@ -1748,7 +1969,7 @@ export class PaymentsService {
     const currency = (input.currency ?? 'EUR').toUpperCase();
     const amountValue = this.formatAmountValue(input.amountCents);
     const redirectUrl = `${this.getAppBaseUrl()}/client/bookings/${input.bookingId}?payment=success`;
-    const webhookUrl = `${this.getAppBaseUrl()}/api/payments/webhooks/mollie`;
+    const webhookUrl = this.getPaymentsWebhookUrl();
     const description =
       input.description ??
       `Saubio réservation ${input.bookingId.slice(0, 8).toUpperCase()}`;
@@ -1794,6 +2015,23 @@ export class PaymentsService {
       this.configService.get('app.appUrl' as keyof AppEnvironmentConfig) ??
       'http://localhost:3000';
     return url.replace(/\/+$/, '');
+  }
+
+  private getPaymentsWebhookUrl(): string {
+    const configured = this.configService.get('app.paymentsWebhookUrl' as keyof AppEnvironmentConfig);
+    const apiBase = this.configService.get('app.apiPublicUrl' as keyof AppEnvironmentConfig);
+    const normalizedApiBase =
+      typeof apiBase === 'string' && apiBase.trim().length ? apiBase.trim().replace(/\/+$/, '') : null;
+    const fallbackBase = normalizedApiBase ?? `${this.getAppBaseUrl()}/api`;
+    const fallback = `${fallbackBase}/payments/webhooks/mollie`;
+    const trimmed = typeof configured === 'string' ? configured.trim() : '';
+    const url = trimmed.length ? trimmed : fallback;
+    const source = trimmed.length ? 'configured PAYMENTS_WEBHOOK_URL' : 'APP_URL fallback';
+    this.logger.debug(`[Payments] Using webhook URL (${source}): ${url}`);
+    if (!/^https?:\/\//i.test(url)) {
+      this.logger.warn(`[Payments] Webhook URL "${url}" does not look like an absolute HTTP(S) endpoint.`);
+    }
+    return url;
   }
 
   private formatAmountValue(amountCents: number): string {

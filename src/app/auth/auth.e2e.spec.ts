@@ -179,7 +179,7 @@ describe('AuthController (e2e)', () => {
           useValue: {
             get: (key: string) => {
               if (key === 'app.jwtRefreshSecret') return 'refresh-secret';
-              if (key === 'app.jwtRefreshExpiresIn') return '7d';
+              if (key === 'app.jwtRefreshExpiresIn') return '8h';
               if (key === 'app.jwtAccessExpiresIn') return '1h';
               if (key === 'app.maxRefreshTokens') return 1;
               return undefined;

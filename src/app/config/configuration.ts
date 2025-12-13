@@ -8,6 +8,7 @@ export interface AppEnvironmentConfig {
   jwtAccessExpiresIn?: string;
   jwtRefreshExpiresIn?: string;
   appUrl?: string;
+  apiPublicUrl?: string;
   paypalClientId?: string;
   paypalClientSecret?: string;
   emailProviderUrl?: string;
@@ -28,6 +29,8 @@ export interface AppEnvironmentConfig {
   onfidoWorkflowId?: string;
   mollieApiKey?: string;
   mollieWebhookToken?: string;
+  paymentsWebhookUrl?: string;
+  mollieProviderOnboardingUrl?: string;
   googleClientId?: string;
   appleClientId?: string;
   appleTeamId?: string;
@@ -45,8 +48,9 @@ export default registerAs('app', (): AppEnvironmentConfig => ({
   jwtAccessSecret: process.env.JWT_ACCESS_SECRET ?? process.env.JWT_SECRET,
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET ?? process.env.JWT_SECRET,
   jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '1h',
-  jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
+  jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '8h',
   appUrl: process.env.APP_URL ?? 'http://localhost:4200',
+  apiPublicUrl: process.env.PUBLIC_API_URL ?? process.env.API_URL,
   paypalClientId: process.env.PAYPAL_CLIENT_ID,
   paypalClientSecret: process.env.PAYPAL_CLIENT_SECRET,
   emailProviderUrl: process.env.EMAIL_PROVIDER_URL,
@@ -73,6 +77,8 @@ export default registerAs('app', (): AppEnvironmentConfig => ({
   onfidoWorkflowId: process.env.ONFIDO_WORKFLOW_ID,
   mollieApiKey: process.env.MOLLIE_API_KEY,
   mollieWebhookToken: process.env.MOLLIE_WEBHOOK_TOKEN,
+  paymentsWebhookUrl: process.env.PAYMENTS_WEBHOOK_URL,
+  mollieProviderOnboardingUrl: process.env.MOLLIE_PROVIDER_ONBOARDING_URL,
   googleClientId: process.env.GOOGLE_CLIENT_ID,
   appleClientId: process.env.APPLE_CLIENT_ID,
   appleTeamId: process.env.APPLE_TEAM_ID,

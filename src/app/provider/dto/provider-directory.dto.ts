@@ -10,15 +10,9 @@ import {
   Min,
 } from 'class-validator';
 import { ServiceCategory } from '@saubio/models';
+import { SERVICE_TYPE_IDS } from '../service-type-catalog';
 
-const SERVICE_CATEGORY_VALUES: ServiceCategory[] = [
-  'residential',
-  'office',
-  'industrial',
-  'windows',
-  'disinfection',
-  'eco_plus',
-];
+const SERVICE_CATEGORY_VALUES: ServiceCategory[] = SERVICE_TYPE_IDS;
 
 const SORT_VALUES = ['rating', 'rate'] as const;
 

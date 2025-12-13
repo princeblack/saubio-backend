@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { AddressSuggestion, PriceEstimate, PriceEstimateParams } from '@saubio/models';
+import type { AddressSuggestion, PriceEstimate, PriceEstimateParams, ServiceCategory } from '@saubio/models';
 import { EcoPreference } from '@saubio/models';
 import {
   LoyaltyBalance as PrismaLoyaltyBalance,
@@ -10,6 +10,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GeocodingService } from '../geocoding/geocoding.service';
+import { PostalCodeService } from '../geocoding/postal-code.service';
 
 type PricingQuoteInput = {
   surfacesSquareMeters: number;
@@ -28,18 +29,6 @@ type FinalizeLoyaltyInput = {
 };
 
 type PricingRuleMap = Map<string, PricingRule>;
-type ProviderZoneWithProvider = Prisma.ProviderServiceZoneGetPayload<{
-  include: {
-    provider: {
-      select: {
-        id: true;
-        hourlyRateCents: true;
-        serviceCategories: true;
-      };
-    };
-  };
-}>;
-
 @Injectable()
 export class PricingService {
   private readonly logger = new Logger(PricingService.name);
@@ -48,7 +37,8 @@ export class PricingService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly geocoding: GeocodingService
+    private readonly geocoding: GeocodingService,
+    private readonly postalCodes: PostalCodeService
   ) {}
 
   async getPublicConfig() {
@@ -110,8 +100,11 @@ export class PricingService {
   }
 
   async estimateLocalRates(params: PriceEstimateParams): Promise<PriceEstimate> {
-    const normalizedPostal = params.postalCode?.trim();
+    const normalizedPostal = this.postalCodes.normalizePostalCode(params.postalCode);
     const hours = this.normalizeHours(params.hours);
+    this.logger.debug(
+      `[PriceEstimate] Input postal=${params.postalCode ?? ''} normalized=${normalizedPostal ?? ''} service=${params.service ?? 'any'} hours=${hours}`
+    );
     if (!normalizedPostal) {
       return this.buildEstimateResponse({
         postalCode: '',
@@ -121,9 +114,9 @@ export class PricingService {
       });
     }
 
-    const suggestions = await this.geocoding.suggest(normalizedPostal);
-    const location = this.pickMatchingSuggestion(suggestions, normalizedPostal);
-    if (!location) {
+    const postalInfo = this.postalCodes.lookup(normalizedPostal);
+    if (!postalInfo) {
+      this.logger.warn(`[PriceEstimate] No postal info found for ${normalizedPostal}`);
       return this.buildEstimateResponse({
         postalCode: normalizedPostal,
         hours,
@@ -132,47 +125,81 @@ export class PricingService {
       });
     }
 
-    const targetCoords =
-      typeof location.latitude === 'number' && typeof location.longitude === 'number'
-        ? { latitude: location.latitude, longitude: location.longitude }
-        : null;
+    let location: AddressSuggestion | null = null;
+    try {
+      const suggestions = await this.geocoding.suggest(normalizedPostal);
+      location = this.pickMatchingSuggestion(suggestions, normalizedPostal);
+    } catch (error) {
+      this.logger.warn(
+        `[PriceEstimate] Unable to fetch geocoding info for ${normalizedPostal}: ${
+          error instanceof Error ? error.message : error
+        }`
+      );
+    }
 
-    const potentialZones = await this.prisma.providerServiceZone.findMany({
+    this.logger.debug(
+      `[PriceEstimate] Resolved city=${postalInfo.city} state=${postalInfo.state ?? ''} area=${postalInfo.area ?? ''}`
+    );
+
+    const providers = await this.prisma.providerProfile.findMany({
       where: {
-        provider: {
-          onboardingStatus: 'ready',
-          hourlyRateCents: { gt: 0 },
-        },
+        user: { isActive: true },
+        onboardingStatus: { in: ['ready', 'approved', 'active'] },
+        hourlyRateCents: { gt: 0 },
       },
-      include: {
-        provider: {
+      select: {
+        id: true,
+        hourlyRateCents: true,
+        serviceCategories: true,
+        serviceAreas: true,
+        serviceZones: {
           select: {
-            id: true,
-            hourlyRateCents: true,
-            serviceCategories: true,
+            postalCode: true,
+            city: true,
+            district: true,
           },
         },
       },
     });
+    this.logger.debug(`[PriceEstimate] Total active providers=${providers.length}`);
 
-    const normalizedPostalKey = this.normalizePostalCode(normalizedPostal);
+    const serviceFiltered = providers.filter((provider) =>
+      this.providerSupportsService(provider.serviceCategories, params.service)
+    );
+    this.logger.debug(`[PriceEstimate] After service filter=${serviceFiltered.length}`);
+
+    const cityVariants = this.postalCodes.cityVariants(postalInfo.city);
+    const normalizedCitySet = new Set<string>();
+    normalizedCitySet.add(postalInfo.normalizedCity);
+    cityVariants
+      .map((variant) => this.postalCodes.normalizeCityName(variant))
+      .filter((value): value is string => Boolean(value))
+      .forEach((variant) => normalizedCitySet.add(variant));
+
+    const locationFiltered = serviceFiltered.filter((provider) =>
+      this.providerMatchesEstimateLocation(provider, normalizedPostal, normalizedCitySet)
+    );
+    this.logger.debug(
+      `[PriceEstimate] After location filter=${locationFiltered.length} (citySet=${Array.from(normalizedCitySet).join(',')})`
+    );
+
+    if (!locationFiltered.length) {
+      this.logger.warn('[PriceEstimate] No providers left after location filter');
+    }
+
     const providerRates = new Map<string, number>();
-    for (const zone of potentialZones) {
-      if (!zone.provider?.hourlyRateCents) {
+    for (const provider of locationFiltered) {
+      if (!provider.hourlyRateCents || provider.hourlyRateCents <= 0) {
         continue;
       }
-      if (params.service && !zone.provider.serviceCategories.includes(params.service)) {
-        continue;
-      }
-      if (
-        this.zoneMatchesLocation(zone, normalizedPostalKey, location, targetCoords) &&
-        !providerRates.has(zone.provider.id)
-      ) {
-        providerRates.set(zone.provider.id, zone.provider.hourlyRateCents);
-      }
+      providerRates.set(provider.id, provider.hourlyRateCents);
     }
 
     const hourlyRates = Array.from(providerRates.values()).sort((a, b) => a - b);
+    this.logger.debug(
+      `[PriceEstimate] providersConsidered=${hourlyRates.length} min=${hourlyRates[0] ?? 'n/a'} max=${hourlyRates[hourlyRates.length - 1] ?? 'n/a'}`
+    );
+
     const minHourly = hourlyRates.length ? hourlyRates[0] : null;
     const maxHourly = hourlyRates.length ? hourlyRates[hourlyRates.length - 1] : null;
 
@@ -342,79 +369,62 @@ export class PricingService {
     if (!suggestions.length) {
       return null;
     }
-    const normalizedPostal = this.normalizePostalCode(postalCode);
+    const normalizedPostal = this.postalCodes.normalizePostalCode(postalCode);
     const exact = suggestions.find(
-      (suggestion) => this.normalizePostalCode(suggestion.postalCode) === normalizedPostal
+      (suggestion) => this.postalCodes.normalizePostalCode(suggestion.postalCode) === normalizedPostal
     );
     if (exact) {
       return exact;
     }
     const startsWith = suggestions.find((suggestion) =>
-      this.normalizePostalCode(suggestion.postalCode).startsWith(normalizedPostal)
+      this.postalCodes.normalizePostalCode(suggestion.postalCode).startsWith(normalizedPostal)
     );
     return startsWith ?? suggestions[0];
   }
 
-  private zoneMatchesLocation(
-    zone: ProviderZoneWithProvider,
-    normalizedPostal: string,
-    location: AddressSuggestion | null,
-    coordinates: { latitude: number; longitude: number } | null
+  private providerSupportsService(
+    categories: ReadonlyArray<ServiceCategory | string>,
+    desired?: ServiceCategory
   ): boolean {
-    const zonePostal = zone.postalCode ? this.normalizePostalCode(zone.postalCode) : null;
-    if (zonePostal && zonePostal === normalizedPostal) {
+    if (!desired) {
+      return true;
+    }
+    return categories.includes(desired);
+  }
+
+  private providerMatchesEstimateLocation(
+    provider: {
+      serviceAreas: string[];
+      serviceZones: { postalCode: string | null; city: string | null; district: string | null }[];
+    },
+    normalizedPostal: string,
+    normalizedCitySet: Set<string>
+  ): boolean {
+    if (!normalizedPostal && normalizedCitySet.size === 0) {
       return true;
     }
 
-    const zoneCity = zone.city?.trim().toLowerCase();
-    const targetCity = location?.city?.trim().toLowerCase();
-    if (zoneCity && targetCity && zoneCity === targetCity) {
+    const matchesPostal =
+      normalizedPostal &&
+      provider.serviceZones.some((zone) => {
+        const zonePostal = this.postalCodes.normalizePostalCode(zone.postalCode);
+        return zonePostal?.startsWith(normalizedPostal);
+      });
+    if (matchesPostal) {
       return true;
     }
 
-    const zoneDistrict = zone.district?.trim().toLowerCase();
-    const targetDistrict = location?.district?.trim().toLowerCase();
-    if (zoneDistrict && targetDistrict && zoneDistrict === targetDistrict) {
-      return true;
-    }
-
-    if (
-      coordinates &&
-      typeof zone.latitude === 'number' &&
-      typeof zone.longitude === 'number'
-    ) {
-      const radiusKm = zone.radiusKm ?? 5;
-      const distance = this.distanceInKm(
-        coordinates.latitude,
-        coordinates.longitude,
-        zone.latitude,
-        zone.longitude
-      );
-      if (distance <= radiusKm) {
+    if (normalizedCitySet.size > 0) {
+      const areaMatch = provider.serviceAreas.some((area) => {
+        const normalized = this.postalCodes.normalizeCityName(area);
+        return normalized ? normalizedCitySet.has(normalized) : false;
+      });
+      if (areaMatch) {
         return true;
       }
     }
 
     return false;
-  }
-
-  private normalizePostalCode(value: string | undefined | null): string {
-    if (!value) {
-      return '';
-    }
-    return value.toString().replace(/\s+/g, '').toLowerCase();
-  }
-
-  private distanceInKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    const toRad = (value: number) => (value * Math.PI) / 180;
-    const R = 6371;
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
   }
 
   private async getOrCreateBalance(

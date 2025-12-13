@@ -1,6 +1,14 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import type { BookingRequest, PaymentRecord, ProviderDashboardResponse, ProviderProfile, ProviderResourceItem, User } from '@saubio/models';
+import type {
+  BookingRequest,
+  PaymentRecord,
+  ProviderDashboardResponse,
+  ProviderProfile,
+  ProviderResourceItem,
+  ProviderServiceCatalogResponse,
+  User,
+} from '@saubio/models';
 import { AccessTokenGuard } from '../auth/guards/access-token.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -9,6 +17,7 @@ import { ProviderService, type ProviderOnboardingStatusResponse } from './provid
 import { ProviderMissionFiltersDto } from './dto/provider-mission-filters.dto';
 import { UpdateProviderMissionStatusDto } from './dto/update-provider-mission-status.dto';
 import { UpdateProviderProfileDto } from './dto/update-provider-profile.dto';
+import { UpdateProviderServicesDto } from './dto/update-provider-services.dto';
 import { CancelProviderMissionDto } from './dto/cancel-provider-mission.dto';
 import { CompleteIdentityDto } from './dto/complete-identity.dto';
 import { CompleteAddressDto } from './dto/complete-address.dto';
@@ -86,6 +95,19 @@ export class ProviderController {
     return this.providerService.updateProfile(user, payload);
   }
 
+  @Get('services')
+  getServiceCatalog(@CurrentUser() user: User): Promise<ProviderServiceCatalogResponse> {
+    return this.providerService.getServiceCatalog(user);
+  }
+
+  @Put('services')
+  updateServiceCatalog(
+    @CurrentUser() user: User,
+    @Body() payload: UpdateProviderServicesDto
+  ): Promise<ProviderServiceCatalogResponse> {
+    return this.providerService.updateServiceCatalog(user, payload);
+  }
+
   @Get('invitations')
   listInvitations(@CurrentUser() user: User) {
     return this.providerService.listShortNoticeInvitations(user);
@@ -102,6 +124,7 @@ export class ProviderController {
   }
 
   @Get('onboarding/status')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate')
   getOnboardingStatus(@CurrentUser() user: User): Promise<ProviderOnboardingStatusResponse> {
     return this.providerService.getOnboardingStatus(user);
   }

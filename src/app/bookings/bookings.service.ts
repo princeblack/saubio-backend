@@ -29,6 +29,7 @@ import {
   BookingStatus as PrismaBookingStatus,
   BookingMode as PrismaBookingMode,
   ProviderTeam,
+  SoilLevel as PrismaSoilLevel,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -426,8 +427,17 @@ export class BookingsService {
       throw new BadRequestException(dateValidationError);
     }
 
-    const pricing = await this.calculatePricing({
+    const normalizedFrequency: CleaningFrequency =
+      payload.frequency === 'last_minute' ? 'once' : payload.frequency;
+
+    const pricingSurface = this.resolveSurfaceForPricing({
       surfacesSquareMeters: payload.surfacesSquareMeters,
+      durationHours: payload.durationHours,
+      recommendedHours: payload.recommendedHours,
+    });
+
+    const pricing = await this.calculatePricing({
+      surfacesSquareMeters: pricingSurface,
       ecoPreference: payload.ecoPreference,
       clientId: clientId ?? undefined,
     });
@@ -460,10 +470,15 @@ export class BookingsService {
     }
 
     const leadTimeDays = this.calculateLeadTimeDays(payload.startAt);
+    const autoShortNotice = payload.frequency === 'last_minute';
     const isShortNotice =
-      payload.shortNotice ?? (leadTimeDays <= BookingsService.SHORT_NOTICE_WINDOW_DAYS);
+      (payload.shortNotice ?? autoShortNotice) || leadTimeDays <= BookingsService.SHORT_NOTICE_WINDOW_DAYS;
     const normalizedMode: BookingMode = isShortNotice ? 'smart_match' : payload.mode;
-    const assignmentInput: CreateBookingDto = { ...payload, mode: normalizedMode };
+    const assignmentInput: CreateBookingDto = {
+      ...payload,
+      mode: normalizedMode,
+      frequency: normalizedFrequency,
+    };
     const assignmentPlan = isShortNotice
       ? { providerIds: [], requiredProviders: assignmentInput.requiredProviders ?? 1 }
       : await this.buildAssignmentPlan(assignmentInput, matchingCriteria);
@@ -477,24 +492,57 @@ export class BookingsService {
         })
       : null;
 
+    const contactDetails = payload.contact ?? null;
+    const onsiteContact = payload.onsiteContact ?? null;
+    const contactAddress = contactDetails?.address ?? payload.billingAddress ?? payload.address;
+    const billingAddress = payload.billingAddress ?? contactAddress ?? payload.address;
+    const cleaningPreferencesPayload = this.buildCleaningPreferencesPayload(payload.servicePreferences);
+    const upholsteryDetailsPayload = this.buildUpholsteryDetailsPayload(payload.servicePreferences);
+    const additionalInstructions = payload.servicePreferences?.additionalInstructions?.trim();
+    const soilLevel = this.toPrismaSoilLevel(payload.servicePreferences?.soilLevel);
+    const couponCode = payload.couponCode?.trim();
+
     const booking = await this.prisma.booking.create({
       data: {
         client: clientId ? { connect: { id: clientId } } : undefined,
         guestToken: options.guestToken ?? null,
         company: payload.companyId ? { connect: { id: payload.companyId } } : undefined,
         service: payload.service,
-        surfacesSquareMeters: payload.surfacesSquareMeters,
+        surfacesSquareMeters: payload.surfacesSquareMeters ?? null,
+        durationHours: payload.durationHours ?? null,
+        recommendedHours: payload.recommendedHours ?? null,
+        durationManuallyAdjusted: payload.durationManuallyAdjusted ?? false,
         startAt: new Date(payload.startAt),
         endAt: new Date(payload.endAt),
-        frequency: BookingMapper.toPrismaFrequency(payload.frequency),
+        frequency: BookingMapper.toPrismaFrequency(normalizedFrequency),
         mode: BookingMapper.toPrismaMode(normalizedMode),
         ecoPreference: BookingMapper.toPrismaEcoPreference(payload.ecoPreference),
+        couponCode: couponCode ?? undefined,
         addressStreetLine1: payload.address.streetLine1,
         addressStreetLine2: payload.address.streetLine2,
         addressPostalCode: payload.address.postalCode,
         addressCity: payload.address.city,
         addressCountryCode: payload.address.countryCode,
         addressAccessNotes: payload.address.accessNotes,
+        billingStreetLine1: billingAddress?.streetLine1,
+        billingStreetLine2: billingAddress?.streetLine2,
+        billingPostalCode: billingAddress?.postalCode,
+        billingCity: billingAddress?.city,
+        billingCountryCode: billingAddress?.countryCode,
+        billingAccessNotes: billingAddress?.accessNotes,
+        contactFirstName: contactDetails?.firstName,
+        contactLastName: contactDetails?.lastName,
+        contactCompany: contactDetails?.company,
+        contactPhone: contactDetails?.phone,
+        contactStreetLine1: contactAddress?.streetLine1,
+        contactStreetLine2: contactAddress?.streetLine2,
+        contactPostalCode: contactAddress?.postalCode,
+        contactCity: contactAddress?.city,
+        contactCountryCode: contactAddress?.countryCode,
+        contactAccessNotes: contactAddress?.accessNotes,
+        onsiteContactFirstName: onsiteContact?.firstName,
+        onsiteContactLastName: onsiteContact?.lastName,
+        onsiteContactPhone: onsiteContact?.phone,
         status: BookingMapper.toPrismaStatus(status),
         pricingSubtotalCents: pricing.subtotalCents,
         pricingEcoCents: pricing.ecoSurchargeCents,
@@ -544,6 +592,10 @@ export class BookingsService {
         shortNotice: isShortNotice,
         leadTimeDays,
         shortNoticeDepositCents: depositHoldCents ?? null,
+        soilLevel: soilLevel ?? undefined,
+        cleaningPreferences: cleaningPreferencesPayload ?? undefined,
+        upholsteryDetails: upholsteryDetailsPayload ?? undefined,
+        additionalInstructions: additionalInstructions ?? undefined,
       },
       include: {
         assignments: true,
@@ -710,15 +762,40 @@ export class BookingsService {
 
       const nextEcoPreference =
         payload.ecoPreference ?? BookingMapper.toDomainEcoPreference(existing.ecoPreference);
-      const nextSurfaces = payload.surfacesSquareMeters ?? existing.surfacesSquareMeters;
-      const pricing =
-        payload.surfacesSquareMeters || payload.ecoPreference
-          ? await this.calculatePricing({
+      const currentSurfaces =
+        existing.surfacesSquareMeters !== null && existing.surfacesSquareMeters !== undefined
+          ? Number(existing.surfacesSquareMeters)
+          : undefined;
+      const currentDurationHours =
+        existing.durationHours !== null && existing.durationHours !== undefined
+          ? Number(existing.durationHours)
+          : undefined;
+      const currentRecommendedHours =
+        existing.recommendedHours !== null && existing.recommendedHours !== undefined
+          ? Number(existing.recommendedHours)
+          : undefined;
+      const nextSurfaces =
+        payload.surfacesSquareMeters !== undefined ? payload.surfacesSquareMeters : currentSurfaces;
+      const nextDurationHours =
+        payload.durationHours !== undefined ? payload.durationHours : currentDurationHours;
+      const nextRecommendedHours =
+        payload.recommendedHours !== undefined ? payload.recommendedHours : currentRecommendedHours;
+      const shouldReprice =
+        payload.surfacesSquareMeters !== undefined ||
+        payload.ecoPreference !== undefined ||
+        payload.durationHours !== undefined ||
+        payload.recommendedHours !== undefined;
+      const pricing = shouldReprice
+        ? await this.calculatePricing({
+            surfacesSquareMeters: this.resolveSurfaceForPricing({
               surfacesSquareMeters: nextSurfaces,
-              ecoPreference: nextEcoPreference,
-              clientId: existing.clientId,
-            })
-          : null;
+              durationHours: nextDurationHours,
+              recommendedHours: nextRecommendedHours,
+            }),
+            ecoPreference: nextEcoPreference,
+            clientId: existing.clientId,
+          })
+        : null;
 
       const matchingCriteria = this.buildMatchingCriteria({
         service: payload.service ?? BookingMapper.toDomainService(existing.service),
@@ -800,6 +877,33 @@ export class BookingsService {
         });
       }
 
+      const normalizedFrequencyUpdate =
+        payload.frequency !== undefined
+          ? payload.frequency === 'last_minute'
+            ? 'once'
+            : payload.frequency
+          : undefined;
+      const billingAddressUpdate = payload.billingAddress;
+      const contactUpdate = payload.contact;
+      const onsiteContactUpdate = payload.onsiteContact;
+      const shouldUpdateContactAddress = Boolean(contactUpdate?.address || billingAddressUpdate);
+      const contactAddressUpdate = contactUpdate?.address ?? billingAddressUpdate;
+      const servicePreferencesUpdate = payload.servicePreferences;
+      const cleaningPreferencesUpdate =
+        servicePreferencesUpdate !== undefined
+          ? this.buildCleaningPreferencesPayload(servicePreferencesUpdate)
+          : undefined;
+      const upholsteryDetailsUpdate =
+        servicePreferencesUpdate !== undefined
+          ? this.buildUpholsteryDetailsPayload(servicePreferencesUpdate)
+          : undefined;
+      const soilLevelUpdate =
+        servicePreferencesUpdate !== undefined
+          ? this.toPrismaSoilLevel(servicePreferencesUpdate?.soilLevel)
+          : undefined;
+      const additionalInstructionsUpdate =
+        servicePreferencesUpdate?.additionalInstructions?.trim();
+
       await tx.booking.update({
         where: { id },
         data: {
@@ -809,19 +913,68 @@ export class BookingsService {
                 ? { connect: { id: sanitizedCompanyId } }
                 : { disconnect: true }
               : undefined,
-          service: payload.service,
-          surfacesSquareMeters: payload.surfacesSquareMeters,
+          service: payload.service ?? undefined,
+          surfacesSquareMeters: payload.surfacesSquareMeters ?? undefined,
+          durationHours: payload.durationHours ?? undefined,
+          recommendedHours: payload.recommendedHours ?? undefined,
+          durationManuallyAdjusted:
+            payload.durationManuallyAdjusted !== undefined ? payload.durationManuallyAdjusted : undefined,
           startAt: payload.startAt ? new Date(payload.startAt) : undefined,
           endAt: payload.endAt ? new Date(payload.endAt) : undefined,
-          frequency: payload.frequency ? BookingMapper.toPrismaFrequency(payload.frequency) : undefined,
+          frequency: normalizedFrequencyUpdate
+            ? BookingMapper.toPrismaFrequency(normalizedFrequencyUpdate)
+            : undefined,
           mode: payload.mode ? BookingMapper.toPrismaMode(payload.mode) : undefined,
           ecoPreference: payload.ecoPreference ? BookingMapper.toPrismaEcoPreference(payload.ecoPreference) : undefined,
+          couponCode:
+            payload.couponCode !== undefined ? (payload.couponCode?.trim() || null) : undefined,
           addressStreetLine1: payload.address?.streetLine1,
           addressStreetLine2: payload.address?.streetLine2,
           addressPostalCode: payload.address?.postalCode,
           addressCity: payload.address?.city,
           addressCountryCode: payload.address?.countryCode,
           addressAccessNotes: payload.address?.accessNotes,
+          billingStreetLine1: billingAddressUpdate ? billingAddressUpdate.streetLine1 : undefined,
+          billingStreetLine2: billingAddressUpdate ? billingAddressUpdate.streetLine2 : undefined,
+          billingPostalCode: billingAddressUpdate ? billingAddressUpdate.postalCode : undefined,
+          billingCity: billingAddressUpdate ? billingAddressUpdate.city : undefined,
+          billingCountryCode: billingAddressUpdate ? billingAddressUpdate.countryCode : undefined,
+          billingAccessNotes: billingAddressUpdate ? billingAddressUpdate.accessNotes : undefined,
+          contactFirstName: contactUpdate ? contactUpdate.firstName ?? null : undefined,
+          contactLastName: contactUpdate ? contactUpdate.lastName ?? null : undefined,
+          contactCompany: contactUpdate ? contactUpdate.company ?? null : undefined,
+          contactPhone: contactUpdate ? contactUpdate.phone ?? null : undefined,
+          contactStreetLine1: shouldUpdateContactAddress
+            ? contactAddressUpdate?.streetLine1 ?? null
+            : undefined,
+          contactStreetLine2: shouldUpdateContactAddress
+            ? contactAddressUpdate?.streetLine2 ?? null
+            : undefined,
+          contactPostalCode: shouldUpdateContactAddress
+            ? contactAddressUpdate?.postalCode ?? null
+            : undefined,
+          contactCity: shouldUpdateContactAddress ? contactAddressUpdate?.city ?? null : undefined,
+          contactCountryCode: shouldUpdateContactAddress
+            ? contactAddressUpdate?.countryCode ?? null
+            : undefined,
+          contactAccessNotes: shouldUpdateContactAddress
+            ? contactAddressUpdate?.accessNotes ?? null
+            : undefined,
+          onsiteContactFirstName: onsiteContactUpdate ? onsiteContactUpdate.firstName ?? null : undefined,
+          onsiteContactLastName: onsiteContactUpdate ? onsiteContactUpdate.lastName ?? null : undefined,
+          onsiteContactPhone: onsiteContactUpdate ? onsiteContactUpdate.phone ?? null : undefined,
+          soilLevel:
+            servicePreferencesUpdate !== undefined ? soilLevelUpdate ?? null : undefined,
+          cleaningPreferences:
+            servicePreferencesUpdate !== undefined
+              ? cleaningPreferencesUpdate ?? Prisma.DbNull
+              : undefined,
+          upholsteryDetails:
+            servicePreferencesUpdate !== undefined
+              ? upholsteryDetailsUpdate ?? Prisma.DbNull
+              : undefined,
+          additionalInstructions:
+            servicePreferencesUpdate !== undefined ? additionalInstructionsUpdate ?? null : undefined,
           status: sanitizedStatus ? BookingMapper.toPrismaStatus(sanitizedStatus) : undefined,
           pricingSubtotalCents: pricing ? pricing.subtotalCents : undefined,
           pricingEcoCents: pricing ? pricing.ecoSurchargeCents : undefined,
@@ -1311,6 +1464,94 @@ export class BookingsService {
     });
   }
 
+  private resolveSurfaceForPricing(payload: {
+    surfacesSquareMeters?: number | null;
+    durationHours?: number | null;
+    recommendedHours?: number | null;
+  }) {
+    if (typeof payload.surfacesSquareMeters === 'number' && payload.surfacesSquareMeters > 0) {
+      return payload.surfacesSquareMeters;
+    }
+    const sourceHours =
+      typeof payload.durationHours === 'number' && payload.durationHours > 0
+        ? payload.durationHours
+        : payload.recommendedHours;
+    if (typeof sourceHours === 'number' && sourceHours > 0) {
+      return this.estimateSurfaceFromHours(sourceHours);
+    }
+    return 50;
+  }
+
+  private estimateSurfaceFromHours(hours: number) {
+    const normalized = Math.min(Math.max(hours, 2), 12);
+    if (normalized <= 2) {
+      return 50;
+    }
+    const extraSteps = Math.ceil((normalized - 2) / 0.5);
+    return 50 + extraSteps * 15;
+  }
+
+  private buildCleaningPreferencesPayload(
+    preferences: CreateBookingDto['servicePreferences']
+  ): Prisma.JsonObject | undefined {
+    if (!preferences?.wishes?.length) {
+      return undefined;
+    }
+    const wishes = preferences.wishes
+      .map((wish) => wish?.trim())
+      .filter((wish): wish is string => typeof wish === 'string' && wish.length > 0);
+    if (!wishes.length) {
+      return undefined;
+    }
+    return {
+      wishes,
+    } as Prisma.JsonObject;
+  }
+
+  private buildUpholsteryDetailsPayload(
+    preferences: CreateBookingDto['servicePreferences']
+  ): Prisma.JsonObject | undefined {
+    if (!preferences) {
+      return undefined;
+    }
+    const quantities = preferences.upholsteryQuantities
+      ? Object.entries(preferences.upholsteryQuantities)
+          .map(([key, value]) => [key, Number(value)] as const)
+          .filter(([, value]) => Number.isFinite(value) && value > 0)
+          .reduce<Record<string, number>>((acc, [key, value]) => {
+            acc[key] = value;
+            return acc;
+          }, {})
+      : {};
+    const addons = (preferences.upholsteryAddons ?? [])
+      .map((addon) => addon?.trim())
+      .filter((addon): addon is string => typeof addon === 'string' && addon.length > 0);
+    if (!Object.keys(quantities).length && !addons.length) {
+      return undefined;
+    }
+    return {
+      quantities,
+      addons,
+    } as Prisma.JsonObject;
+  }
+
+  private toPrismaSoilLevel(
+    soilLevel?: CreateBookingDto['servicePreferences'] extends { soilLevel?: infer T } ? T : never
+  ): PrismaSoilLevel | undefined {
+    switch (soilLevel) {
+      case 'light':
+        return PrismaSoilLevel.LIGHT;
+      case 'normal':
+        return PrismaSoilLevel.NORMAL;
+      case 'strong':
+        return PrismaSoilLevel.STRONG;
+      case 'extreme':
+        return PrismaSoilLevel.EXTREME;
+      default:
+        return undefined;
+    }
+  }
+
   private buildAttachmentInput(attachments: string[], userId?: string | null) {
     return attachments
       .filter((value): value is string => typeof value === 'string' && value.length > 0)
@@ -1458,7 +1699,18 @@ export class BookingsService {
         accessNotes: booking.addressAccessNotes ?? undefined,
       },
       service: BookingMapper.toDomainService(booking.service),
-      surfacesSquareMeters: booking.surfacesSquareMeters,
+      surfacesSquareMeters:
+        booking.surfacesSquareMeters !== null && booking.surfacesSquareMeters !== undefined
+          ? Number(booking.surfacesSquareMeters)
+          : undefined,
+      durationHours:
+        booking.durationHours !== null && booking.durationHours !== undefined
+          ? Number(booking.durationHours)
+          : undefined,
+      recommendedHours:
+        booking.recommendedHours !== null && booking.recommendedHours !== undefined
+          ? Number(booking.recommendedHours)
+          : undefined,
       startAt: booking.startAt.toISOString(),
       endAt: booking.endAt.toISOString(),
       frequency: BookingMapper.toDomainFrequency(booking.frequency),

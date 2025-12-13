@@ -52,6 +52,13 @@ enum EcoPreference {
   BIO
 }
 
+enum SoilLevel {
+  LIGHT
+  NORMAL
+  STRONG
+  EXTREME
+}
+
 enum BookingStatus {
   DRAFT
   PENDING_PROVIDER
@@ -599,18 +606,41 @@ model Booking {
   company              Company?          @relation("BookingCompany", fields: [companyId], references: [id])
   companyId            String?
   service              String
-  surfacesSquareMeters Int
+  surfacesSquareMeters Decimal?          @db.Decimal(10, 2)
+  durationHours        Decimal?          @db.Decimal(5, 2)
+  recommendedHours     Decimal?          @db.Decimal(5, 2)
+  durationManuallyAdjusted Boolean       @default(false)
   startAt              DateTime
   endAt                DateTime
   frequency            CleaningFrequency
   mode                 BookingMode
   ecoPreference        EcoPreference
+  couponCode           String?
+  contactFirstName     String?
+  contactLastName      String?
+  contactCompany       String?
+  contactPhone         String?
+  contactStreetLine1   String?
+  contactStreetLine2   String?
+  contactPostalCode    String?
+  contactCity          String?
+  contactCountryCode   String?
+  contactAccessNotes   String?
+  onsiteContactFirstName String?
+  onsiteContactLastName  String?
+  onsiteContactPhone     String?
   addressStreetLine1   String
   addressStreetLine2   String?
   addressPostalCode    String
   addressCity          String
   addressCountryCode   String
   addressAccessNotes   String?
+  billingStreetLine1   String?
+  billingStreetLine2   String?
+  billingPostalCode    String?
+  billingCity          String?
+  billingCountryCode   String?
+  billingAccessNotes   String?
   status               BookingStatus     @default(PENDING_PROVIDER)
   pricingSubtotalCents Int
   pricingEcoCents      Int
@@ -650,6 +680,10 @@ model Booking {
   shortNoticeDepositCents Int?
   guestToken  String?
   claimedAt   DateTime?
+  soilLevel   SoilLevel?
+  cleaningPreferences Json?
+  upholsteryDetails   Json?
+  additionalInstructions String?
 }
 
 enum BookingInvitationStatus {

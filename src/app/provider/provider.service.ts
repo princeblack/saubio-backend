@@ -27,11 +27,14 @@ import type {
   ProviderProfile as ProviderProfileModel,
   ProviderResourceItem,
   ProviderDirectoryItem,
+  ProviderDirectoryDetails,
   ProviderIdentityDocumentSummary,
   ProviderAvailabilityOverview,
   User,
   ProviderBookingInvitation,
   BookingInvitationStatus,
+  ProviderServiceCatalogResponse,
+  ServiceCategory,
 } from '@saubio/models';
 import { ConfigService } from '@nestjs/config';
 import type { AppEnvironmentConfig } from '../config/configuration';
@@ -57,6 +60,9 @@ import { UpdateProviderAvailabilityDto } from './dto/update-provider-availabilit
 import { CreateProviderTimeOffDto } from './dto/create-provider-time-off.dto';
 import { EmailQueueService } from '../notifications/email-queue.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { UpdateProviderServicesDto } from './dto/update-provider-services.dto';
+import { SERVICE_TYPE_CATALOG } from './service-type-catalog';
+import { PostalCodeService } from '../geocoding/postal-code.service';
 
 const SHORT_NOTICE_PLATFORM_FEE_CENTS = 300;
 const BOOKING_CLIENT_SELECT = {
@@ -134,6 +140,8 @@ type BookingInvitationWithBooking = Prisma.BookingInvitationGetPayload<{
 
 @Injectable()
 export class ProviderService {
+  private readonly serviceTypeSet = new Set<ServiceCategory>(SERVICE_TYPE_CATALOG.map((service) => service.id));
+
   private readonly logger = new Logger(ProviderService.name);
   private opsRecipientCache: { ids: string[]; expiresAt: number } | null = null;
 
@@ -144,41 +152,60 @@ export class ProviderService {
     private readonly smsService: SmsService,
     private readonly configService: ConfigService<AppEnvironmentConfig>,
     private readonly emailQueue: EmailQueueService,
-    private readonly notifications: NotificationsService
+    private readonly notifications: NotificationsService,
+    private readonly postalCodes: PostalCodeService
   ) {}
 
   async listDirectoryProviders(filters: ProviderDirectoryDto): Promise<ProviderDirectoryItem[]> {
     const normalizedCity = filters.city?.trim();
-    const normalizedPostalCode = filters.postalCode?.trim().toLowerCase();
+    const rawPostalInput = filters.postalCode?.trim() ?? null;
+    const postalSearchPrefix = rawPostalInput?.toLowerCase() ?? null;
+    const lookupPostalCode = this.postalCodes.normalizePostalCode(rawPostalInput);
+    const locationInfo = lookupPostalCode ? this.postalCodes.lookup(lookupPostalCode) : null;
+    const locationVariants = locationInfo ? this.postalCodes.cityVariants(locationInfo.city) : [];
 
-    const andConditions: Prisma.ProviderProfileWhereInput[] = [{ user: { isActive: true } }];
+    const baseConditions: Prisma.ProviderProfileWhereInput[] = [{ user: { isActive: true } }];
+    const serviceConditions: Prisma.ProviderProfileWhereInput[] = [...baseConditions];
+    if (filters.service) {
+      serviceConditions.push({
+        serviceCategories: { has: filters.service },
+      });
+    }
 
+    const locationConditions: Prisma.ProviderProfileWhereInput[] = [...serviceConditions];
     if (normalizedCity) {
-      andConditions.push({
+      locationConditions.push({
         OR: this.buildCityVariants(normalizedCity).map((variant) => ({
           serviceAreas: { has: variant },
         })),
       });
     }
 
-    if (normalizedPostalCode) {
-      andConditions.push({
-        serviceZones: {
-          some: {
-            OR: [
-              { postalCode: { equals: normalizedPostalCode, mode: 'insensitive' } },
-              { postalCode: { startsWith: normalizedPostalCode, mode: 'insensitive' } },
-            ],
+    if (postalSearchPrefix) {
+      const areaConditions =
+        locationVariants.length > 0
+          ? locationVariants.map((variant) => ({
+              serviceAreas: { has: variant },
+            }))
+          : [];
+      locationConditions.push({
+        OR: [
+          {
+            serviceZones: {
+              some: {
+                OR: [
+                  { postalCode: { equals: postalSearchPrefix, mode: 'insensitive' } },
+                  { postalCode: { startsWith: postalSearchPrefix, mode: 'insensitive' } },
+                ],
+              },
+            },
           },
-        },
+          ...areaConditions,
+        ],
       });
     }
 
-    if (filters.service) {
-      andConditions.push({
-        serviceCategories: { has: filters.service },
-      });
-    }
+    const andConditions: Prisma.ProviderProfileWhereInput[] = [...locationConditions];
 
     if (typeof filters.minRateCents === 'number' || typeof filters.maxRateCents === 'number') {
       const hourlyRate: Prisma.IntFilter = {};
@@ -203,6 +230,13 @@ export class ProviderService {
       });
     }
 
+    const totalActive = await this.prisma.providerProfile.count({ where: { AND: baseConditions } });
+    const afterServiceCount = await this.prisma.providerProfile.count({ where: { AND: serviceConditions } });
+    const afterLocationCount = await this.prisma.providerProfile.count({ where: { AND: locationConditions } });
+    this.logger.debug(
+      `[Directory] Stats active=${totalActive} serviceFiltered=${afterServiceCount} locationFiltered=${afterLocationCount}`
+    );
+
     const take = Math.min(filters.limit ?? 24, 50);
 
     const providers = await this.prisma.providerProfile.findMany({
@@ -214,6 +248,7 @@ export class ProviderService {
           orderBy: { createdAt: 'desc' },
           take: 1,
         },
+        serviceZones: { select: { postalCode: true } },
       },
       orderBy:
         filters.sort === 'rate'
@@ -223,10 +258,53 @@ export class ProviderService {
     });
 
     if (providers.length === 0) {
+      this.logger.debug('[Directory] No providers after initial query.');
       return [];
     }
 
-    const providerIds = providers.map((provider) => provider.id);
+    const debugExclusions: string[] = [];
+
+    const normalizedCitySet = (() => {
+      const values = new Set<string>();
+      if (locationInfo?.normalizedCity) {
+        values.add(locationInfo.normalizedCity);
+      }
+      const variantNormalized = locationVariants
+        .map((variant) => this.postalCodes.normalizeCityName(variant))
+        .filter((value): value is string => Boolean(value));
+      variantNormalized.forEach((value) => values.add(value));
+      const manualCity = this.postalCodes.normalizeCityName(normalizedCity);
+      if (manualCity) {
+        values.add(manualCity);
+      }
+      return values.size > 0 ? values : null;
+    })();
+
+    const locationFiltered = providers.filter((provider) => {
+      if (!postalSearchPrefix && !normalizedCitySet) {
+        return true;
+      }
+      const matches = this.providerMatchesRequestedLocation(
+        provider,
+        postalSearchPrefix,
+        normalizedCitySet
+      );
+      if (!matches) {
+        debugExclusions.push(`${provider.id}:city_mismatch`);
+      }
+      return matches;
+    });
+
+    this.logger.debug(
+      `[Directory] After post-filter location check: ${locationFiltered.length}/${providers.length}`
+    );
+
+    if (locationFiltered.length === 0) {
+      debugExclusions.forEach((entry) => this.logger.debug(`[Directory] excluded ${entry}`));
+      return [];
+    }
+
+    const providerIds = locationFiltered.map((provider) => provider.id);
     const completedMap = await this.resolveCompletedMissions(providerIds);
     const availabilityMap =
       filters.availableOn && filters.durationHours
@@ -237,35 +315,61 @@ export class ProviderService {
           })
         : null;
 
-    return providers
-      .filter((provider) => {
-        if (!availabilityMap) {
-          return true;
+    const availabilityFiltered = availabilityMap
+      ? locationFiltered.filter((provider) => {
+          const available = availabilityMap.get(provider.id) ?? false;
+          if (!available) {
+            debugExclusions.push(`${provider.id}:no_availability`);
+          }
+          return available;
+        })
+      : locationFiltered;
+
+    this.logger.debug(
+      `[Directory] After availability filter: ${availabilityFiltered.length}/${locationFiltered.length}`
+    );
+
+    const missionFiltered = availabilityFiltered.filter((provider) => {
+      if (typeof filters.minCompletedMissions === 'number') {
+        const completed = completedMap.get(provider.id) ?? 0;
+        const passes = completed >= filters.minCompletedMissions;
+        if (!passes) {
+          debugExclusions.push(`${provider.id}:missions_lt_${filters.minCompletedMissions}`);
         }
-        return availabilityMap.get(provider.id) ?? false;
-      })
-      .filter((provider) => {
-        if (typeof filters.minCompletedMissions === 'number') {
-          return (completedMap.get(provider.id) ?? 0) >= filters.minCompletedMissions;
-        }
-        return true;
-      })
-      .map<ProviderDirectoryItem>((provider) => ({
-        id: provider.id,
-        displayName: `${provider.user.firstName} ${provider.user.lastName}`,
-        primaryCity: provider.serviceAreas[0] ?? null,
-        serviceAreas: provider.serviceAreas,
-        languages: provider.languages,
-        hourlyRateCents: provider.hourlyRateCents,
-        ratingAverage: provider.ratingAverage ?? null,
-        ratingCount: provider.ratingCount ?? 0,
-        completedMissions: completedMap.get(provider.id) ?? 0,
-        offersEco: provider.offersEco,
-        acceptsAnimals: provider.acceptsAnimals ?? false,
-        yearsExperience: provider.yearsExperience ?? undefined,
-        bio: provider.bio ?? undefined,
-        photoUrl: provider.documents[0]?.url,
-      }));
+        return passes;
+      }
+      return true;
+    });
+
+    this.logger.debug(
+      `[Directory] After missions filter: ${missionFiltered.length}/${availabilityFiltered.length}`
+    );
+
+    const items = missionFiltered
+      .map<ProviderDirectoryItem>((provider) => {
+        const displayName = provider.user.firstName;
+        return {
+          id: provider.id,
+          displayName,
+          primaryCity: provider.serviceAreas[0] ?? null,
+          serviceAreas: provider.serviceAreas,
+          languages: provider.languages,
+          hourlyRateCents: provider.hourlyRateCents,
+          ratingAverage: provider.ratingAverage ?? null,
+          ratingCount: provider.ratingCount ?? 0,
+          completedMissions: completedMap.get(provider.id) ?? 0,
+          offersEco: provider.offersEco,
+          acceptsAnimals: provider.acceptsAnimals ?? false,
+          yearsExperience: provider.yearsExperience ?? undefined,
+          bio: provider.bio ?? undefined,
+          photoUrl: provider.documents[0]?.url,
+          gender: provider.gender ?? null,
+        };
+      });
+
+    this.logger.debug(`[Directory] Returning ${items.length} provider(s).`);
+    debugExclusions.forEach((entry) => this.logger.debug(`[Directory] excluded ${entry}`));
+    return items;
   }
 
   async listServiceCities(): Promise<string[]> {
@@ -286,6 +390,88 @@ export class ProviderService {
     });
 
     return Array.from(unique).sort((a, b) => a.localeCompare(b, 'de-DE', { sensitivity: 'base' }));
+  }
+
+  private providerMatchesRequestedLocation(
+    provider: PrismaProviderProfile & { serviceZones: Pick<PrismaProviderServiceZone, 'postalCode'>[] },
+    postalPrefix: string | null,
+    normalizedCitySet: Set<string> | null
+  ): boolean {
+    if (!postalPrefix && (!normalizedCitySet || normalizedCitySet.size === 0)) {
+      return true;
+    }
+
+    if (postalPrefix) {
+      const prefix = postalPrefix.toLowerCase();
+      const hasZone = provider.serviceZones.some((zone) =>
+        zone.postalCode?.toLowerCase().startsWith(prefix)
+      );
+      if (hasZone) {
+        return true;
+      }
+    }
+
+    if (normalizedCitySet && normalizedCitySet.size > 0) {
+      return provider.serviceAreas.some((area) => {
+        const normalized = this.postalCodes.normalizeCityName(area);
+        return normalized ? normalizedCitySet.has(normalized) : false;
+      });
+    }
+
+    return false;
+  }
+
+  async getDirectoryProviderDetails(providerId: string): Promise<ProviderDirectoryDetails> {
+    const provider = await this.prisma.providerProfile.findFirst({
+      where: { id: providerId, user: { isActive: true } },
+      include: {
+        user: { select: { firstName: true, lastName: true } },
+        documents: {
+          where: { type: DocumentType.PHOTO_BEFORE },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+        reviews: {
+          orderBy: { createdAt: 'desc' },
+          take: 6,
+          include: {
+            author: { select: { firstName: true } },
+          },
+        },
+      },
+    });
+    if (!provider) {
+      throw new NotFoundException('PROVIDER_NOT_FOUND');
+    }
+    const completed = await this.resolveCompletedMissions([provider.id]);
+    const completedMissions = completed.get(provider.id) ?? 0;
+    const displayName = `${provider.user.firstName} ${provider.user.lastName}`;
+    const reviews = provider.reviews.map((review) => ({
+      id: review.id,
+      authorFirstName: review.author.firstName,
+      comment: review.comment ?? undefined,
+      score: review.score,
+      createdAt: review.createdAt.toISOString(),
+    }));
+    return {
+      id: provider.id,
+      displayName,
+      primaryCity: provider.serviceAreas[0] ?? null,
+      serviceAreas: provider.serviceAreas,
+      languages: provider.languages,
+      hourlyRateCents: provider.hourlyRateCents,
+      ratingAverage: provider.ratingAverage ?? null,
+      ratingCount: provider.ratingCount ?? 0,
+      completedMissions,
+      offersEco: provider.offersEco,
+      acceptsAnimals: provider.acceptsAnimals ?? false,
+      yearsExperience: provider.yearsExperience ?? undefined,
+      bio: provider.bio ?? undefined,
+      photoUrl: provider.documents[0]?.url,
+      gender: provider.gender ?? null,
+      verified: provider.identityVerificationStatus === PrismaIdentityVerificationStatus.VERIFIED,
+      reviews,
+    };
   }
 
   async listShortNoticeInvitations(user: User): Promise<ProviderBookingInvitation[]> {
@@ -629,6 +815,10 @@ export class ProviderService {
     const booking = entity.booking;
     const durationMs = booking.endAt.getTime() - booking.startAt.getTime();
     const durationHours = Math.max(1, Number((durationMs / (1000 * 60 * 60)).toFixed(2)));
+    const surfacesSquareMeters =
+      booking.surfacesSquareMeters !== null && booking.surfacesSquareMeters !== undefined
+        ? Number(booking.surfacesSquareMeters)
+        : null;
     return {
       id: entity.id,
       bookingId: booking.id,
@@ -642,7 +832,7 @@ export class ProviderService {
       endAt: booking.endAt.toISOString(),
       durationHours,
       ecoPreference: BookingMapper.toDomainEcoPreference(booking.ecoPreference),
-      surfacesSquareMeters: booking.surfacesSquareMeters,
+      surfacesSquareMeters,
       requiredProviders: booking.requiredProviders ?? 1,
       shortNoticeDepositCents: booking.shortNoticeDepositCents ?? undefined,
     };
@@ -1483,7 +1673,10 @@ export class ProviderService {
       startAt: mission.startAt.toISOString(),
       endAt: mission.endAt.toISOString(),
       status: BookingMapper.toDomainStatus(mission.status),
-      surfaces: mission.surfacesSquareMeters,
+      surfaces:
+        mission.surfacesSquareMeters !== null && mission.surfacesSquareMeters !== undefined
+          ? Number(mission.surfacesSquareMeters)
+          : undefined,
       ecoPreference: BookingMapper.toDomainEcoPreference(mission.ecoPreference),
     }));
 
@@ -1936,6 +2129,32 @@ export class ProviderService {
     return this.mapProviderProfile(updated);
   }
 
+  async getServiceCatalog(user: User): Promise<ProviderServiceCatalogResponse> {
+    const profile = await this.ensureProviderProfile(user.id);
+    return {
+      serviceTypes: SERVICE_TYPE_CATALOG,
+      selected: (profile.serviceCategories ?? []) as ServiceCategory[],
+    };
+  }
+
+  async updateServiceCatalog(
+    user: User,
+    payload: UpdateProviderServicesDto
+  ): Promise<ProviderServiceCatalogResponse> {
+    const profile = await this.ensureProviderProfile(user.id);
+    const normalized = this.normalizeServiceCategories(payload.serviceTypes ?? []);
+    const updated = await this.prisma.providerProfile.update({
+      where: { id: profile.id },
+      data: {
+        serviceCategories: { set: normalized },
+      },
+    });
+    return {
+      serviceTypes: SERVICE_TYPE_CATALOG,
+      selected: (updated.serviceCategories ?? []) as ServiceCategory[],
+    };
+  }
+
   private async requireProviderProfile(
     userId: string,
     options: { includeDocuments?: boolean } = {}
@@ -2110,6 +2329,10 @@ export class ProviderService {
           typeof doc.metadata === 'object' && doc.metadata !== null ? (doc.metadata as Record<string, unknown>) : undefined,
       })),
     };
+  }
+
+  private normalizeServiceCategories(values: ServiceCategory[]): ServiceCategory[] {
+    return Array.from(new Set((values ?? []).filter((value) => this.serviceTypeSet.has(value))));
   }
 
   private mapIdentityDocument(document: Document & { metadata?: Prisma.JsonValue | null }): ProviderIdentityDocumentSummary {

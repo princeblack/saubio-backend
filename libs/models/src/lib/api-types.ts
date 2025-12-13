@@ -1,8 +1,10 @@
 import type {
   Address,
   AddressSuggestion,
+  BookingContactDetails,
   BookingMode,
   BookingRequest,
+  BookingServicePreferences,
   BookingStatus,
   CleaningFrequency,
   EcoPreference,
@@ -12,6 +14,7 @@ import type {
   ProfileAuditEntry,
   ProfileSummary,
   ProviderProfile,
+  ProviderServiceType,
   ProviderServiceZone,
   ServiceCategory,
   SupportCategory,
@@ -57,13 +60,21 @@ export interface CreateBookingPayload {
   clientId?: string;
   companyId?: string;
   address: Address;
+  billingAddress?: Address;
   service: ServiceCategory;
-  surfacesSquareMeters: number;
+  contact?: BookingContactDetails;
+  onsiteContact?: BookingContactDetails;
+  surfacesSquareMeters?: number;
+  durationHours?: number;
+  recommendedHours?: number;
+  durationManuallyAdjusted?: boolean;
   startAt: string;
   endAt: string;
   frequency: CleaningFrequency;
   mode: BookingMode;
   ecoPreference: EcoPreference;
+  couponCode?: string;
+  servicePreferences?: BookingServicePreferences;
   requiredProviders?: number;
   preferredTeamId?: string;
   providerIds?: string[];
@@ -97,13 +108,21 @@ export interface UpdateBookingPayload {
   clientId?: string;
   companyId?: string;
   address?: Partial<Address>;
+  billingAddress?: Partial<Address>;
+  contact?: BookingContactDetails;
+  onsiteContact?: BookingContactDetails;
   service?: ServiceCategory;
   surfacesSquareMeters?: number;
+  durationHours?: number;
+  recommendedHours?: number;
+  durationManuallyAdjusted?: boolean;
   startAt?: string;
   endAt?: string;
   frequency?: CleaningFrequency;
   mode?: BookingMode;
   ecoPreference?: EcoPreference;
+  couponCode?: string | null;
+  servicePreferences?: BookingServicePreferences;
   requiredProviders?: number;
   preferredTeamId?: string | null;
   providerIds?: string[];
@@ -183,6 +202,14 @@ export interface PriceEstimate {
     latitude?: number | null;
     longitude?: number | null;
   };
+}
+
+export interface PostalCodeLookupResponse {
+  postalCode: string;
+  city: string;
+  area?: string;
+  state?: string;
+  normalizedCity: string;
 }
 
 export interface SupportTicketFilters {
@@ -312,6 +339,20 @@ export interface ProviderDirectoryItem {
   yearsExperience?: number;
   bio?: string;
   photoUrl?: string;
+  gender?: string | null;
+}
+
+export interface ProviderReviewSummary {
+  id: string;
+  authorFirstName: string;
+  comment?: string;
+  score: number;
+  createdAt: string;
+}
+
+export interface ProviderDirectoryDetails extends ProviderDirectoryItem {
+  verified?: boolean;
+  reviews: ProviderReviewSummary[];
 }
 
 export interface ProviderDashboardMissionSummary {
@@ -322,7 +363,7 @@ export interface ProviderDashboardMissionSummary {
   startAt: string;
   endAt: string;
   status: BookingRequest['status'];
-  surfaces: number;
+  surfaces: number | null | undefined;
   ecoPreference: EcoPreference;
 }
 
@@ -406,6 +447,11 @@ export interface ProviderDashboardResponse {
   quality: ProviderDashboardQuality;
   payments: ProviderDashboardPaymentsSummary;
   resources: ProviderResourceItem[];
+}
+
+export interface ProviderServiceCatalogResponse {
+  serviceTypes: ProviderServiceType[];
+  selected: ServiceCategory[];
 }
 
 export interface UpdateProviderProfilePayload {

@@ -10,7 +10,8 @@ export type CleaningFrequency =
   | 'weekly'
   | 'biweekly'
   | 'monthly'
-  | 'contract';
+  | 'contract'
+  | 'last_minute';
 
 export type ServiceCategory =
   | 'residential'
@@ -18,11 +19,57 @@ export type ServiceCategory =
   | 'industrial'
   | 'windows'
   | 'disinfection'
-  | 'eco_plus';
+  | 'eco_plus'
+  | 'carpet'
+  | 'upholstery'
+  | 'spring'
+  | 'final'
+  | 'cluttered'
+  | 'construction'
+  | 'move_out'
+  | 'pigeon_cleanup'
+  | 'restaurant'
+  | 'heavy_dirty'
+  | 'carpet_laundry'
+  | 'wintergarden'
+  | 'nicotine_removal'
+  | 'fire_damage'
+  | 'clearout'
+  | 'wood_terrace'
+  | 'water_damage'
+  | 'hoarder'
+  | 'deep_disinfection';
+
+export interface ProviderServiceType {
+  id: ServiceCategory;
+  title: string;
+  description: string;
+  includedOptions: string[];
+}
 
 export type BookingMode = 'manual' | 'smart_match';
 
 export type EcoPreference = 'standard' | 'bio';
+
+export type CleaningSoilLevel = 'light' | 'normal' | 'strong' | 'extreme';
+
+export interface BookingContactDetails {
+  firstName?: string;
+  lastName?: string;
+  company?: string;
+  phone?: string;
+  address?: Address;
+}
+
+export interface BookingServicePreferences {
+  soilLevel?: CleaningSoilLevel;
+  wishes?: string[];
+  upholstery?: {
+    quantities?: Record<string, number>;
+    addons?: string[];
+  };
+  additionalInstructions?: string;
+}
 
 export interface BaseEntity {
   id: string;
@@ -182,7 +229,13 @@ export interface BookingRequest extends BaseEntity {
   companyId?: string;
   address: Address;
   service: ServiceCategory;
-  surfacesSquareMeters: number;
+  billingAddress?: Address;
+  contact?: BookingContactDetails;
+  onsiteContact?: BookingContactDetails;
+  surfacesSquareMeters?: number | null;
+  durationHours?: number | null;
+  recommendedHours?: number | null;
+  durationManuallyAdjusted?: boolean;
   startAt: string;
   endAt: string;
   frequency: CleaningFrequency;
@@ -208,6 +261,8 @@ export interface BookingRequest extends BaseEntity {
   leadTimeDays?: number;
   shortNotice?: boolean;
   shortNoticeDepositCents?: number;
+  couponCode?: string | null;
+  servicePreferences?: BookingServicePreferences;
 }
 
 export type BookingInvitationStatus = 'pending' | 'accepted' | 'declined' | 'expired';
@@ -225,7 +280,7 @@ export interface ProviderBookingInvitation {
   endAt: string;
   durationHours: number;
   ecoPreference: EcoPreference;
-  surfacesSquareMeters: number;
+  surfacesSquareMeters?: number | null;
   requiredProviders: number;
   shortNoticeDepositCents?: number;
 }

@@ -8,9 +8,10 @@ import { ProviderDirectoryController } from './provider-directory.controller';
 import { ProviderCitiesController } from './provider-cities.controller';
 import { SmsService } from './sms.service';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { GeocodingModule } from '../geocoding/geocoding.module';
 
 @Module({
-  imports: [AuthModule, BookingsModule, PaymentsModule, NotificationsModule],
+  imports: [AuthModule, BookingsModule, PaymentsModule, NotificationsModule, GeocodingModule],
   controllers: [ProviderController, ProviderDirectoryController, ProviderCitiesController],
   providers: [ProviderService, SmsService],
 })

@@ -6,6 +6,7 @@ import type {
   ServiceCategory,
   BookingStatus,
   BookingAuditEntry,
+  CleaningSoilLevel,
 } from '@saubio/models';
 import {
   Booking as PrismaBooking,
@@ -18,6 +19,7 @@ import {
   ProviderTeam,
   ProviderTeamMember,
   User as PrismaUser,
+  SoilLevel as PrismaSoilLevel,
 } from '@prisma/client';
 
 type BookingAuditEntity = {
@@ -52,8 +54,47 @@ export class BookingMapper {
         countryCode: entity.addressCountryCode,
         accessNotes: entity.addressAccessNotes ?? undefined,
       },
+      billingAddress: BookingMapper.buildAddress(
+        entity.billingStreetLine1,
+        entity.billingStreetLine2,
+        entity.billingPostalCode,
+        entity.billingCity,
+        entity.billingCountryCode ?? entity.addressCountryCode,
+        entity.billingAccessNotes
+      ),
+      contact: BookingMapper.buildContactDetails({
+        firstName: entity.contactFirstName,
+        lastName: entity.contactLastName,
+        company: entity.contactCompany,
+        phone: entity.contactPhone,
+        address: BookingMapper.buildAddress(
+          entity.contactStreetLine1,
+          entity.contactStreetLine2,
+          entity.contactPostalCode,
+          entity.contactCity,
+          entity.contactCountryCode ?? entity.addressCountryCode,
+          entity.contactAccessNotes
+        ),
+      }),
+      onsiteContact: BookingMapper.buildContactDetails({
+        firstName: entity.onsiteContactFirstName,
+        lastName: entity.onsiteContactLastName,
+        phone: entity.onsiteContactPhone,
+      }),
       service: BookingMapper.toDomainService(entity.service),
-      surfacesSquareMeters: entity.surfacesSquareMeters,
+      surfacesSquareMeters:
+        entity.surfacesSquareMeters !== null && entity.surfacesSquareMeters !== undefined
+          ? Number(entity.surfacesSquareMeters)
+          : undefined,
+      durationHours:
+        entity.durationHours !== null && entity.durationHours !== undefined
+          ? Number(entity.durationHours)
+          : undefined,
+      recommendedHours:
+        entity.recommendedHours !== null && entity.recommendedHours !== undefined
+          ? Number(entity.recommendedHours)
+          : undefined,
+      durationManuallyAdjusted: entity.durationManuallyAdjusted ?? undefined,
       startAt: entity.startAt.toISOString(),
       endAt: entity.endAt.toISOString(),
       frequency: BookingMapper.toDomainFrequency(entity.frequency),
@@ -106,7 +147,128 @@ export class BookingMapper {
       leadTimeDays: entity.leadTimeDays ?? undefined,
       shortNotice: entity.shortNotice ?? undefined,
       shortNoticeDepositCents: entity.shortNoticeDepositCents ?? undefined,
+      couponCode: entity.couponCode ?? undefined,
+      servicePreferences: BookingMapper.buildServicePreferences(entity),
     };
+  }
+
+  private static buildAddress(
+    streetLine1?: string | null,
+    streetLine2?: string | null,
+    postalCode?: string | null,
+    city?: string | null,
+    countryCode?: string | null,
+    accessNotes?: string | null
+  ): BookingRequest['address'] | undefined {
+    if (!streetLine1 || !postalCode || !city || !countryCode) {
+      return undefined;
+    }
+    return {
+      streetLine1,
+      streetLine2: streetLine2 ?? undefined,
+      postalCode,
+      city,
+      countryCode,
+      accessNotes: accessNotes ?? undefined,
+    };
+  }
+
+  private static buildContactDetails(params: {
+    firstName?: string | null;
+    lastName?: string | null;
+    company?: string | null;
+    phone?: string | null;
+    address?: BookingRequest['address'];
+  }): BookingRequest['contact'] {
+    const hasIdentity =
+      Boolean(params.firstName) ||
+      Boolean(params.lastName) ||
+      Boolean(params.company) ||
+      Boolean(params.phone) ||
+      Boolean(params.address);
+    if (!hasIdentity) {
+      return undefined;
+    }
+    return {
+      firstName: params.firstName ?? undefined,
+      lastName: params.lastName ?? undefined,
+      company: params.company ?? undefined,
+      phone: params.phone ?? undefined,
+      address: params.address,
+    };
+  }
+
+  private static buildServicePreferences(entity: PrismaBooking): BookingRequest['servicePreferences'] {
+    const soilLevel = BookingMapper.toDomainSoilLevel(entity.soilLevel);
+    const rawCleaning =
+      typeof entity.cleaningPreferences === 'object' && entity.cleaningPreferences !== null
+        ? (entity.cleaningPreferences as { wishes?: unknown })
+        : undefined;
+    const rawUpholstery =
+      typeof entity.upholsteryDetails === 'object' && entity.upholsteryDetails !== null
+        ? (entity.upholsteryDetails as { quantities?: Record<string, unknown>; addons?: unknown })
+        : undefined;
+
+    const wishes = Array.isArray(rawCleaning?.wishes)
+      ? rawCleaning?.wishes
+          .map((wish) => (typeof wish === 'string' ? wish : null))
+          .filter((wish): wish is string => Boolean(wish))
+      : [];
+
+    const quantities = rawUpholstery?.quantities
+      ? Object.entries(rawUpholstery.quantities)
+          .map(([key, value]) => [key, Number(value)] as const)
+          .filter(([, value]) => Number.isFinite(value) && value > 0)
+          .reduce<Record<string, number>>((acc, [key, value]) => {
+            acc[key] = value;
+            return acc;
+          }, {})
+      : {};
+
+    const addons = Array.isArray(rawUpholstery?.addons)
+      ? rawUpholstery.addons
+          .map((addon) => (typeof addon === 'string' ? addon : null))
+          .filter((addon): addon is string => Boolean(addon))
+      : [];
+
+    const hasPreferences =
+      soilLevel ||
+      wishes.length > 0 ||
+      Object.keys(quantities).length > 0 ||
+      addons.length > 0 ||
+      Boolean(entity.additionalInstructions);
+
+    if (!hasPreferences) {
+      return undefined;
+    }
+
+    return {
+      soilLevel: soilLevel ?? undefined,
+      wishes: wishes.length ? wishes : undefined,
+      upholstery:
+        Object.keys(quantities).length || addons.length
+          ? {
+              quantities: Object.keys(quantities).length ? quantities : undefined,
+              addons: addons.length ? addons : undefined,
+            }
+          : undefined,
+      additionalInstructions: entity.additionalInstructions ?? undefined,
+    };
+  }
+
+  private static toDomainSoilLevel(level?: PrismaSoilLevel | null): CleaningSoilLevel | undefined {
+    switch (level) {
+      case PrismaSoilLevel.LIGHT:
+        return 'light';
+      case PrismaSoilLevel.NORMAL:
+        return 'normal';
+      case PrismaSoilLevel.STRONG:
+        return 'strong';
+      case PrismaSoilLevel.EXTREME:
+        return 'extreme';
+      default:
+        return undefined;
+    }
   }
 
   static toDomainService(service: string): ServiceCategory {
@@ -117,6 +279,11 @@ export class BookingMapper {
       'windows',
       'disinfection',
       'eco_plus',
+      'carpet',
+      'upholstery',
+      'spring',
+      'final',
+      'cluttered',
     ];
     if (known.includes(service as ServiceCategory)) {
       return service as ServiceCategory;
@@ -143,6 +310,7 @@ export class BookingMapper {
         return PrismaCleaningFrequency.CONTRACT;
       case 'weekly':
         return PrismaCleaningFrequency.WEEKLY;
+      case 'last_minute':
       case 'once':
       default:
         return PrismaCleaningFrequency.ONCE;

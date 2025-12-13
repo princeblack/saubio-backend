@@ -1,0 +1,4 @@
+import { SERVICE_CATALOG, SERVICE_CATEGORY_IDS } from '@saubio/models';
+
+export const SERVICE_TYPE_CATALOG = SERVICE_CATALOG;
+export const SERVICE_TYPE_IDS = SERVICE_CATEGORY_IDS;

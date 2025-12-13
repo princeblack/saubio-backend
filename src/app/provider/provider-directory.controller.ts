@@ -1,20 +1,22 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Header, Param, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { AccessTokenGuard } from '../auth/guards/access-token.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
 import { ProviderService } from './provider.service';
 import { ProviderDirectoryDto } from './dto/provider-directory.dto';
 
 @ApiTags('provider-directory')
 @Controller('directory/providers')
-@UseGuards(AccessTokenGuard, RolesGuard)
-@Roles('client', 'company', 'employee', 'admin')
 export class ProviderDirectoryController {
   constructor(private readonly providerService: ProviderService) {}
 
   @Get()
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate')
   list(@Query() filters: ProviderDirectoryDto) {
     return this.providerService.listDirectoryProviders(filters);
+  }
+
+  @Get(':providerId/details')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate')
+  details(@Param('providerId') providerId: string) {
+    return this.providerService.getDirectoryProviderDetails(providerId);
   }
 }

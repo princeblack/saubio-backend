@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { PaymentsService } from './payments.service';
 import { AccessTokenGuard } from '../auth/guards/access-token.guard';
@@ -11,6 +11,7 @@ import { ManualPayoutBatchDto } from './dto/manual-payout.dto';
 import { CapturePaymentDto } from './dto/capture-payment.dto';
 import { PrepareCheckoutPaymentDto } from './dto/prepare-checkout-payment.dto';
 import { CreateMandateDto } from './dto/create-mandate.dto';
+import { UpdateProviderPayoutStatusDto } from './dto/update-provider-payout-status.dto';
 
 @ApiTags('payments')
 @Controller('payments')
@@ -46,6 +47,15 @@ export class PaymentsController {
   @Roles('admin', 'employee')
   startProviderOnboardingAdmin(@Body() payload: ProviderOnboardingDto) {
     return this.paymentsService.startProviderOnboardingByAdmin(payload);
+  }
+
+  @Patch('providers/:providerId/payout-status')
+  @Roles('admin', 'employee')
+  updateProviderPayoutStatus(
+    @Param('providerId') providerId: string,
+    @Body() payload: UpdateProviderPayoutStatusDto
+  ) {
+    return this.paymentsService.updateProviderPayoutStatus(providerId, payload);
   }
 
   @Post('payouts/manual')

@@ -5,6 +5,7 @@ import {
   IsDateString,
   IsIn,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   Max,
@@ -26,6 +27,11 @@ export const SERVICE_CATEGORY_VALUES: ServiceCategory[] = [
   'windows',
   'disinfection',
   'eco_plus',
+  'carpet',
+  'upholstery',
+  'spring',
+  'final',
+  'cluttered',
 ];
 
 export const CLEANING_FREQUENCY_VALUES: CleaningFrequency[] = [
@@ -34,11 +40,14 @@ export const CLEANING_FREQUENCY_VALUES: CleaningFrequency[] = [
   'biweekly',
   'monthly',
   'contract',
+  'last_minute',
 ];
 
 export const BOOKING_MODE_VALUES: BookingMode[] = ['manual', 'smart_match'];
 
 export const ECO_PREFERENCE_VALUES: EcoPreference[] = ['standard', 'bio'];
+
+export const SOIL_LEVEL_VALUES = ['light', 'normal', 'strong', 'extreme'] as const;
 
 export class BookingAddressDto implements Omit<Address, 'coordinates'> {
   @IsString()
@@ -62,6 +71,54 @@ export class BookingAddressDto implements Omit<Address, 'coordinates'> {
   accessNotes?: string;
 }
 
+export class BookingContactDto {
+  @IsOptional()
+  @IsString()
+  firstName?: string;
+
+  @IsOptional()
+  @IsString()
+  lastName?: string;
+
+  @IsOptional()
+  @IsString()
+  company?: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BookingAddressDto)
+  address?: BookingAddressDto;
+}
+
+export class BookingServicePreferencesDto {
+  @IsOptional()
+  @IsString()
+  @IsIn(SOIL_LEVEL_VALUES)
+  soilLevel?: (typeof SOIL_LEVEL_VALUES)[number];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  wishes?: string[];
+
+  @IsOptional()
+  @IsObject()
+  upholsteryQuantities?: Record<string, number>;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  upholsteryAddons?: string[];
+
+  @IsOptional()
+  @IsString()
+  additionalInstructions?: string;
+}
+
 export class CreateBookingDto {
   @IsOptional()
   @IsString()
@@ -75,14 +132,49 @@ export class CreateBookingDto {
   @Type(() => BookingAddressDto)
   address!: BookingAddressDto;
 
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BookingAddressDto)
+  billingAddress?: BookingAddressDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BookingContactDto)
+  contact?: BookingContactDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BookingContactDto)
+  onsiteContact?: BookingContactDto;
+
   @IsString()
   @IsIn(SERVICE_CATEGORY_VALUES)
   service!: ServiceCategory;
 
+  @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   @Min(10)
   @Max(100000)
-  surfacesSquareMeters!: number;
+  surfacesSquareMeters?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(2)
+  @Max(12)
+  durationHours?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(2)
+  @Max(12)
+  recommendedHours?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  durationManuallyAdjusted?: boolean;
 
   @IsDateString()
   startAt!: string;
@@ -101,6 +193,15 @@ export class CreateBookingDto {
   @IsString()
   @IsIn(ECO_PREFERENCE_VALUES)
   ecoPreference!: EcoPreference;
+
+  @IsOptional()
+  @IsString()
+  couponCode?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BookingServicePreferencesDto)
+  servicePreferences?: BookingServicePreferencesDto;
 
   @IsOptional()
   @IsNumber()
