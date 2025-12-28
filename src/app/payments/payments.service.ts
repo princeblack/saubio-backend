@@ -1,10 +1,13 @@
 import {
   ConflictException,
+  BadRequestException,
   ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
   UnprocessableEntityException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import {
@@ -37,7 +40,8 @@ import type {
   User as PrismaUser,
   PaymentMandate as PrismaPaymentMandate,
 } from '@prisma/client';
-import { ProviderOnboardingDto } from './dto/provider-onboarding.dto';
+import { ProviderPayoutAdminDto } from './dto/provider-payout-admin.dto';
+import { BookingsService } from '../bookings/bookings.service';
 import { UpdateProviderPayoutStatusDto } from './dto/update-provider-payout-status.dto';
 import type { AppEnvironmentConfig } from '../config/configuration';
 import { ConfigService } from '@nestjs/config';
@@ -154,7 +158,9 @@ export class PaymentsService {
     private readonly invoiceService: InvoiceService,
     private readonly notifications: NotificationsService,
     private readonly emailQueue: EmailQueueService,
-    private readonly pricing: PricingService
+    private readonly pricing: PricingService,
+    @Inject(forwardRef(() => BookingsService))
+    private readonly bookingsService: BookingsService
   ) {}
 
   @Cron('0 5 * * 5')
@@ -183,6 +189,36 @@ export class PaymentsService {
   }
 
   async startProviderOnboardingForUser(user: User): Promise<ProviderOnboardingResponse> {
+    const profile = await this.prisma.providerProfile.findUnique({
+      where: { userId: user.id },
+      select: {
+        id: true,
+        payoutReady: true,
+        payoutMethod: true,
+        payoutLast4: true,
+        kycStatus: true,
+        payoutActivationStatus: true,
+        payoutAccountHolder: true,
+        payoutIbanMasked: true,
+        payoutBankName: true,
+      },
+    });
+    if (!profile) {
+      throw new NotFoundException('PROVIDER_PROFILE_NOT_FOUND');
+    }
+    const payoutStatus = this.normalizePayoutStatus(profile.kycStatus, profile.payoutActivationStatus);
+    return {
+      url: null,
+      expiresAt: null,
+      payoutReady: profile.payoutReady ?? false,
+      status: payoutStatus,
+      method: (profile.payoutMethod as ProviderOnboardingResponse['method']) ?? 'bank_transfer',
+      last4: profile.payoutLast4 ?? null,
+      mandateStatus: profile.payoutActivationStatus ?? null,
+    };
+  }
+
+  async setupProviderPayout(user: User, payload: { accountHolder: string; iban: string; signatureDate?: string }): Promise<ProviderOnboardingResponse> {
     if (!this.mollieService.isEnabled()) {
       throw new ConflictException('MOLLIE_NOT_CONFIGURED');
     }
@@ -194,74 +230,144 @@ export class PaymentsService {
         payoutMethod: true,
         payoutLast4: true,
         kycStatus: true,
-        user: {
-          select: { email: true, firstName: true, lastName: true },
-        },
+        payoutActivationStatus: true,
+        payoutIbanMasked: true,
+        payoutBankName: true,
       },
     });
     if (!profile) {
       throw new NotFoundException('PROVIDER_PROFILE_NOT_FOUND');
     }
-    const payoutStatus = this.normalizePayoutStatus(profile.kycStatus);
-    if (payoutStatus === 'verified') {
-      if (!profile.payoutReady) {
-        await this.transitionProviderPayoutStatus(profile.id, 'verified', {
-          method: profile.payoutMethod,
-          last4: profile.payoutLast4,
-        });
-      }
-    } else if (payoutStatus === 'rejected') {
-      await this.transitionProviderPayoutStatus(profile.id, 'pending');
-    } else {
-      await this.transitionProviderPayoutStatus(profile.id, payoutStatus);
+    const accountHolder = payload.accountHolder.trim();
+    if (!accountHolder.length) {
+      throw new BadRequestException('ACCOUNT_HOLDER_REQUIRED');
     }
-    const displayName = `${profile.user.firstName ?? ''} ${profile.user.lastName ?? ''}`.trim() || undefined;
-    return this.buildProviderOnboardingResponse({
-      providerId: profile.id,
-      email: profile.user.email,
-      name: displayName,
+    const iban = this.sanitizeIban(payload.iban);
+    if (!iban) {
+      throw new BadRequestException('IBAN_INVALID_FORMAT');
+    }
+    const maskedIban = this.maskIban(iban);
+    this.logger.log(
+      `[Payments] Starting payout setup providerProfile=${profile.id} user=${user.id} accountHolder="${accountHolder}" iban=${maskedIban}`
+    );
+    const signatureDate = payload.signatureDate ?? new Date().toISOString().slice(0, 10);
+    const customerId = await this.ensureMollieCustomer(user);
+    this.logger.debug(
+      `[Payments] Using Mollie customer ${customerId} for providerProfile=${profile.id} user=${user.id}`
+    );
+    this.logger.log(
+      `[Payments] Creating Mollie mandate for providerProfile=${profile.id} customer=${customerId} iban=${maskedIban}`
+    );
+    const mandate = await this.mollieService.createMandate(customerId, {
+      method: 'directdebit' as MollieMandateMethod,
+      consumerName: accountHolder,
+      consumerAccount: iban,
+      signatureDate,
     });
-  }
+    const sanitizedMandateLog = this.buildSanitizedMandateLogForLogging(mandate, maskedIban);
+    this.logger.debug(`[Payments] Full Mollie mandate response\n${JSON.stringify(sanitizedMandateLog, null, 2)}`);
+    const details = (mandate.details ?? {}) as Record<string, unknown>;
+    const mollieBankName = typeof details['consumerBankName'] === 'string' ? (details['consumerBankName'] as string) : undefined;
+    this.logger.log(
+      `[Payments] Mollie mandate response providerProfile=${profile.id} mandate=${mandate.id} status=${mandate.status ?? 'unknown'} bank=${mollieBankName ?? 'n/a'}`
+    );
+    const savedMandate = await this.upsertMollieMandateRecord({
+      clientId: user.id,
+      customerId,
+      mandate,
+    });
+    const mandateStatus = (mandate.status as string | undefined) ?? savedMandate.status ?? 'pending';
+    const payoutStatus: ProviderPayoutActivationStatus =
+      mandateStatus === 'valid'
+        ? 'verified'
+        : mandateStatus === 'failed' || mandateStatus === 'invalid'
+        ? 'rejected'
+        : 'in_review';
 
-  async startProviderOnboardingByAdmin(payload: ProviderOnboardingDto): Promise<ProviderOnboardingResponse> {
-    if (!this.mollieService.isEnabled()) {
-      throw new ConflictException('MOLLIE_NOT_CONFIGURED');
-    }
-    const profile = await this.prisma.providerProfile.findUnique({
-      where: { id: payload.providerId },
+    await this.transitionProviderPayoutStatus(profile.id, payoutStatus, {
+      method: 'bank_transfer',
+      last4: iban.slice(-4),
+      accountHolder,
+      ibanMasked: this.maskIban(iban),
+      ibanCountry: iban.slice(0, 2),
+      bankName: mollieBankName,
+      mollieCustomerId: customerId,
+      mollieMandateId: mandate.id,
+    });
+    this.logger.log(
+      `[Payments] Updated payout activation providerProfile=${profile.id} status=${payoutStatus} mandateStatus=${mandateStatus}`
+    );
+
+    const updated = await this.prisma.providerProfile.findUnique({
+      where: { id: profile.id },
       select: {
-        id: true,
         payoutReady: true,
         payoutMethod: true,
         payoutLast4: true,
         kycStatus: true,
-        user: {
-          select: { email: true, firstName: true, lastName: true },
-        },
+        payoutActivationStatus: true,
+        payoutIbanMasked: true,
+        payoutBankName: true,
+      },
+    });
+
+    return {
+      url: null,
+      expiresAt: null,
+      payoutReady: Boolean(updated?.payoutReady),
+      status: this.normalizePayoutStatus(updated?.kycStatus, updated?.payoutActivationStatus),
+      method: (updated?.payoutMethod as ProviderOnboardingResponse['method']) ?? 'bank_transfer',
+      last4: updated?.payoutLast4 ?? iban.slice(-4),
+      mandateStatus,
+    };
+  }
+
+  async setupProviderPayoutByAdmin(payload: ProviderPayoutAdminDto): Promise<ProviderOnboardingResponse> {
+    const providerProfile = await this.prisma.providerProfile.findUnique({
+      where: { id: payload.providerId },
+      select: { userId: true },
+    });
+    if (!providerProfile) {
+      throw new NotFoundException('PROVIDER_PROFILE_NOT_FOUND');
+    }
+    const providerUser = await this.prisma.user.findUnique({
+      where: { id: providerProfile.userId },
+    });
+    if (!providerUser) {
+      throw new NotFoundException('PROVIDER_USER_NOT_FOUND');
+    }
+    return this.setupProviderPayout(providerUser as unknown as User, payload);
+  }
+
+  async saveProviderBankInfo(user: User, payload: { accountHolder: string; iban: string; signatureDate?: string }) {
+    await this.setupProviderPayout(user, payload);
+    return this.getProviderBankInfo(user);
+  }
+
+  async getProviderBankInfo(user: User) {
+    const profile = await this.prisma.providerProfile.findUnique({
+      where: { userId: user.id },
+      select: {
+        payoutAccountHolder: true,
+        payoutIbanMasked: true,
+        payoutBankName: true,
+        payoutLast4: true,
+        kycStatus: true,
+        payoutActivationStatus: true,
+        payoutReady: true,
       },
     });
     if (!profile) {
       throw new NotFoundException('PROVIDER_PROFILE_NOT_FOUND');
     }
-    const payoutStatus = this.normalizePayoutStatus(profile.kycStatus);
-    if (payoutStatus === 'verified') {
-      if (!profile.payoutReady) {
-        await this.transitionProviderPayoutStatus(profile.id, 'verified', {
-          method: profile.payoutMethod,
-          last4: profile.payoutLast4,
-        });
-      }
-    } else if (payoutStatus === 'rejected') {
-      await this.transitionProviderPayoutStatus(profile.id, 'pending');
-    } else {
-      await this.transitionProviderPayoutStatus(profile.id, payoutStatus);
-    }
-    const displayName = `${profile.user.firstName ?? ''} ${profile.user.lastName ?? ''}`.trim() || undefined;
-    return this.buildProviderOnboardingResponse({
-      providerId: profile.id,
-      email: profile.user.email,
-      name: displayName,
-    });
+    const status = this.mapActivationStatus(profile);
+    return {
+      accountHolder: profile.payoutAccountHolder ?? null,
+      ibanMasked: profile.payoutIbanMasked ?? null,
+      bankName: profile.payoutBankName ?? null,
+      last4: profile.payoutLast4 ?? null,
+      status,
+    };
   }
 
   async createManualPayoutBatch(scheduledFor?: Date, note?: string) {
@@ -300,72 +406,80 @@ export class PaymentsService {
     };
   }
 
-  private buildProviderOnboardingResponse(options: {
-    providerId: string;
-    email: string;
-    name?: string;
-  }): ProviderOnboardingResponse {
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    const configured =
-      this.configService.get('app.mollieProviderOnboardingUrl' as keyof AppEnvironmentConfig) ?? '';
-    const fallbackUrl = 'https://www.mollie.com/dashboard/onboarding';
-    const normalizedBase = configured.trim().length ? configured.trim() : fallbackUrl;
-    const absoluteBase = /^https?:\/\//i.test(normalizedBase)
-      ? normalizedBase
-      : `${this.getAppBaseUrl()}${normalizedBase.startsWith('/') ? normalizedBase : `/${normalizedBase}`}`;
-    let target: URL;
-    try {
-      target = new URL(absoluteBase);
-    } catch {
-      target = new URL(fallbackUrl);
-    }
-    target.searchParams.set('email', options.email);
-    if (options.name) {
-      target.searchParams.set('name', options.name);
-    }
-    target.searchParams.set('providerId', options.providerId);
-    return {
-      url: target.toString(),
-      expiresAt,
-    };
-  }
-
   private async transitionProviderPayoutStatus(
     providerProfileId: string,
     status: ProviderPayoutActivationStatus,
-    options: { method?: string | null; last4?: string | null } = {}
+    options: {
+      method?: string | null;
+      last4?: string | null;
+      accountHolder?: string | null;
+      ibanMasked?: string | null;
+      ibanCountry?: string | null;
+      bankName?: string | null;
+      mollieCustomerId?: string | null;
+      mollieMandateId?: string | null;
+    } = {}
   ) {
     const updateData: Prisma.ProviderProfileUpdateInput = {};
+    const updateDataAny = updateData as Record<string, unknown>;
+    const setOptionalDetails = (allowNull = false) => {
+      if (options.accountHolder !== undefined || allowNull) {
+        updateDataAny['payoutAccountHolder'] = options.accountHolder ?? null;
+      }
+      if (options.ibanMasked !== undefined || allowNull) {
+        updateDataAny['payoutIbanMasked'] = options.ibanMasked ?? null;
+      }
+      if (options.ibanCountry !== undefined || allowNull) {
+        updateDataAny['payoutIbanCountry'] = options.ibanCountry ?? null;
+      }
+      if (options.bankName !== undefined || allowNull) {
+        updateDataAny['payoutBankName'] = options.bankName ?? null;
+      }
+      if (options.mollieCustomerId !== undefined || allowNull) {
+        updateDataAny['payoutMollieCustomerId'] = options.mollieCustomerId ?? null;
+      }
+      if (options.mollieMandateId !== undefined || allowNull) {
+        updateDataAny['payoutMollieMandateId'] = options.mollieMandateId ?? null;
+      }
+    };
     switch (status) {
       case 'verified':
         updateData.payoutReady = true;
         updateData.kycStatus = 'verified';
+        updateDataAny['payoutActivationStatus'] = 'active';
         if (options.method !== undefined) {
           updateData.payoutMethod = options.method ?? 'bank_transfer';
         }
         if (options.last4 !== undefined) {
           updateData.payoutLast4 = options.last4 ?? null;
         }
+        setOptionalDetails();
         break;
       case 'in_review':
         updateData.payoutReady = false;
         updateData.kycStatus = 'in_review';
+        updateDataAny['payoutActivationStatus'] = 'pending';
+        setOptionalDetails();
         break;
       case 'rejected':
         updateData.payoutReady = false;
         updateData.kycStatus = 'rejected';
+        updateDataAny['payoutActivationStatus'] = 'failed';
         updateData.payoutMethod = null;
         updateData.payoutLast4 = null;
+        setOptionalDetails(true);
         break;
       default:
         updateData.payoutReady = false;
         updateData.kycStatus = 'pending';
+        updateDataAny['payoutActivationStatus'] = 'pending';
         if (options.method !== undefined) {
           updateData.payoutMethod = options.method ?? null;
         }
         if (options.last4 !== undefined) {
           updateData.payoutLast4 = options.last4 ?? null;
         }
+        setOptionalDetails();
         break;
     }
     await this.prisma.providerProfile.update({
@@ -374,7 +488,19 @@ export class PaymentsService {
     });
   }
 
-  private normalizePayoutStatus(status?: string | null): ProviderPayoutActivationStatus {
+  private normalizePayoutStatus(status?: string | null, activation?: string | null): ProviderPayoutActivationStatus {
+    const normalizedActivation = (activation ?? '').toLowerCase();
+    if (normalizedActivation === 'active' || normalizedActivation === 'failed' || normalizedActivation === 'pending') {
+      if (normalizedActivation === 'active') {
+        return 'verified';
+      }
+      if (normalizedActivation === 'failed') {
+        return 'rejected';
+      }
+      if (normalizedActivation === 'pending') {
+        return 'in_review';
+      }
+    }
     const normalized = (status ?? 'pending').toLowerCase();
     if (normalized === 'verified' || normalized === 'in_review' || normalized === 'rejected') {
       return normalized;
@@ -563,13 +689,77 @@ export class PaymentsService {
     };
   }
 
+  private buildSanitizedMandateLogForLogging(mandate: MollieMandate, maskedIban: string) {
+    try {
+      const serialized = JSON.parse(JSON.stringify(mandate ?? {}));
+      if (serialized?.details && typeof serialized.details === 'object') {
+        if (typeof serialized.details.consumerAccount === 'string') {
+          serialized.details.consumerAccount = maskedIban;
+        }
+        if (typeof serialized.details.cardNumber === 'string') {
+          serialized.details.cardNumber = '****';
+        }
+      }
+      return serialized;
+    } catch (error) {
+      return {
+        id: mandate?.id,
+        status: mandate?.status,
+        serializationError: error instanceof Error ? error.message : 'unknown_error',
+      };
+    }
+  }
+
+  private sanitizeIban(raw: string): string | null {
+    const normalized = raw.replace(/\s+/g, '').toUpperCase();
+    if (!/^[A-Z0-9]{15,34}$/.test(normalized)) {
+      return null;
+    }
+    return normalized;
+  }
+
+  private maskIban(iban: string): string {
+    const normalized = iban.replace(/\s+/g, '').toUpperCase();
+    if (normalized.length <= 8) {
+      return normalized;
+    }
+    const start = normalized.slice(0, 2);
+    const end = normalized.slice(-4);
+    return `${start}••••••${end}`;
+  }
+
+  private mapActivationStatus(profile: {
+    payoutReady?: boolean | null;
+    kycStatus?: string | null;
+    payoutActivationStatus?: string | null;
+  }): 'inactive' | 'pending' | 'active' | 'failed' {
+    const activation = (profile.payoutActivationStatus ?? '').toLowerCase();
+    if (activation === 'active') return 'active';
+    if (activation === 'failed') return 'failed';
+    if (activation === 'pending') return 'pending';
+    const kyc = (profile.kycStatus ?? '').toLowerCase();
+    if (kyc === 'verified') return 'active';
+    if (kyc === 'rejected') return 'failed';
+    if (kyc === 'in_review') return 'pending';
+    return profile.payoutReady ? 'active' : 'inactive';
+  }
+
   private async ensureMollieCustomer(user: User): Promise<string> {
-    const profile = await this.prisma.clientProfile.findFirst({
+    let profile = await this.prisma.clientProfile.findFirst({
       where: { userId: user.id },
-      select: { externalCustomerId: true },
+      select: { id: true, externalCustomerId: true },
     });
     if (profile?.externalCustomerId) {
       return profile.externalCustomerId;
+    }
+    if (!profile) {
+      profile = await this.prisma.clientProfile.create({
+        data: {
+          userId: user.id,
+          defaultLocale: 'de',
+        },
+        select: { id: true, externalCustomerId: true },
+      });
     }
     if (!this.mollieService.isEnabled()) {
       throw new ConflictException('MOLLIE_NOT_CONFIGURED');
@@ -579,8 +769,8 @@ export class PaymentsService {
       name,
       email: user.email,
     });
-    await this.prisma.clientProfile.updateMany({
-      where: { userId: user.id },
+    await this.prisma.clientProfile.update({
+      where: { id: profile.id },
       data: { externalCustomerId: customer.id },
     });
     return customer.id;
@@ -863,6 +1053,9 @@ export class PaymentsService {
       if (typeof enrichedEvent['id'] === 'string' && !payment.externalReference) {
         updateData.externalReference = enrichedEvent['id'] as string;
       }
+      this.logger.log(
+        `[Checkout] Payment confirmed via webhook payment=${payment.id} booking=${payment.bookingId}`
+      );
       const updatedPayment = await this.prisma.payment.update({
         where: { id: payment.id },
         data: updateData,
@@ -878,6 +1071,7 @@ export class PaymentsService {
       );
       await this.notifyPaymentCapturedEvent(updatedPayment);
       await this.finalizeLoyaltyForPayment(updatedPayment);
+      await this.triggerShortNoticeDispatch(updatedPayment);
     }
 
     if (status === 'failed') {
@@ -1481,6 +1675,35 @@ export class PaymentsService {
       paidAmountCents: payment.amountCents,
       currency: payment.currency ?? booking.pricingCurrency ?? 'EUR',
     });
+  }
+
+  private async triggerShortNoticeDispatch(payment: PaymentModel) {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: payment.bookingId },
+      select: { id: true, shortNotice: true, clientId: true },
+    });
+    if (!booking?.shortNotice) {
+      return;
+    }
+    try {
+      const dispatched = await this.bookingsService.dispatchShortNoticeBookingAfterPayment(booking.id, {
+        actorId: payment.clientId ?? booking.clientId ?? null,
+      });
+      if (dispatched) {
+        this.logger.log(
+          `[Payments] Triggered deferred short-notice dispatch for booking=${booking.id} payment=${payment.id}`
+        );
+      } else {
+        this.logger.debug(
+          `[Payments] Short-notice dispatch skipped for booking=${booking.id}; already processed or ineligible.`
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `[Payments] Failed to trigger short-notice dispatch for booking=${booking?.id ?? payment.bookingId}`,
+        error instanceof Error ? error.stack : error
+      );
+    }
   }
 
   private async notifyPaymentConfirmed(

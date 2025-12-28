@@ -7,7 +7,10 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { json, urlencoded } from 'body-parser';
+import type { IncomingMessage } from 'http';
 import { AppModule } from './app/app.module';
+
+type RawBodyRequest = IncomingMessage & { rawBody?: Buffer };
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -26,12 +29,22 @@ async function bootstrap() {
   app.use(
     json({
       limit: '6mb',
+      verify: (req: RawBodyRequest, _res, buf, _encoding) => {
+        if (Buffer.isBuffer(buf)) {
+          req.rawBody = Buffer.from(buf);
+        }
+      },
     })
   );
   app.use(
     urlencoded({
       extended: true,
       limit: '6mb',
+      verify: (req: RawBodyRequest, _res, buf, _encoding) => {
+        if (Buffer.isBuffer(buf)) {
+          req.rawBody = Buffer.from(buf);
+        }
+      },
     })
   );
 

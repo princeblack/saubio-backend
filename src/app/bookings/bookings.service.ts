@@ -5,6 +5,8 @@ import {
   Injectable,
   NotFoundException,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import {
@@ -46,6 +48,7 @@ import { BookingNotificationsService } from './booking-notifications.service';
 import { PaymentsService } from '../payments/payments.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PricingService } from '../pricing/pricing.service';
+import { PromoCodeService, type PromoCodeEvaluation } from '../marketing/promo-code.service';
 
 type BookingCreationResponse = BookingRequest & {
   paymentIntentClientSecret?: string;
@@ -65,6 +68,13 @@ type BookingWithLockState = BookingWithRelations & {
   bookingLocks: BookingLockSnapshot[];
 };
 
+const BOOKING_RELATION_INCLUDE = {
+  assignments: true,
+  auditLog: true,
+  attachments: true,
+  fallbackTeamCandidate: { include: { members: true } },
+} as const;
+
 @Injectable()
 export class BookingsService {
   private readonly logger = new Logger(BookingsService.name);
@@ -75,9 +85,11 @@ export class BookingsService {
     private readonly prisma: PrismaService,
     private readonly matching: BookingMatchingService,
     private readonly bookingNotifications: BookingNotificationsService,
+    @Inject(forwardRef(() => PaymentsService))
     private readonly payments: PaymentsService,
     private readonly notifications: NotificationsService,
-    private readonly pricingEngine: PricingService
+    private readonly pricingEngine: PricingService,
+    private readonly promoCodes: PromoCodeService
   ) {}
 
   @Cron('*/5 * * * *')
@@ -189,26 +201,118 @@ export class BookingsService {
   async findAll(user: User, filters?: ListBookingsQueryDto): Promise<BookingRequest[]> {
     const providerProfile = await this.getProviderProfileId(user.id);
     const baseWhere = await this.buildAccessFilter(user, providerProfile);
-    const where: Prisma.BookingWhereInput = baseWhere ? { ...baseWhere } : {};
+    const andConditions: Prisma.BookingWhereInput[] = [];
+    const parseDate = (value?: string) => {
+      if (!value) return undefined;
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? undefined : date;
+    };
 
-    if (filters?.status) {
-      where.status = BookingMapper.toPrismaStatus(filters.status);
+    if (baseWhere) {
+      andConditions.push(baseWhere);
     }
+
+    if (this.shouldHideDrafts(user)) {
+      andConditions.push({ status: { not: PrismaBookingStatus.DRAFT } });
+    }
+
+    if (filters?.statuses?.length) {
+      andConditions.push({
+        status: {
+          in: filters.statuses.map((status) => BookingMapper.toPrismaStatus(status)),
+        },
+      });
+    } else if (filters?.status) {
+      andConditions.push({ status: BookingMapper.toPrismaStatus(filters.status) });
+    }
+
     if (filters?.mode) {
-      where.mode = BookingMapper.toPrismaMode(filters.mode);
+      andConditions.push({ mode: BookingMapper.toPrismaMode(filters.mode) });
     }
+
     if (filters?.fallbackRequested !== undefined) {
-      where.fallbackRequestedAt = filters.fallbackRequested ? { not: null } : { equals: null };
+      andConditions.push({
+        fallbackRequestedAt: filters.fallbackRequested ? { not: null } : { equals: null },
+      });
     }
+
     if (filters?.fallbackEscalated !== undefined) {
-      where.fallbackEscalatedAt = filters.fallbackEscalated ? { not: null } : { equals: null };
+      andConditions.push({
+        fallbackEscalatedAt: filters.fallbackEscalated ? { not: null } : { equals: null },
+      });
     }
+
     if (typeof filters?.minRetryCount === 'number') {
-      where.matchingRetryCount = { gte: filters.minRetryCount };
+      andConditions.push({ matchingRetryCount: { gte: filters.minRetryCount } });
     }
+
+    if (filters?.service) {
+      andConditions.push({ service: filters.service });
+    }
+
+    if (filters?.city) {
+      andConditions.push({ addressCity: { contains: filters.city, mode: 'insensitive' } });
+    }
+
+    if (filters?.postalCode) {
+      andConditions.push({ addressPostalCode: { startsWith: filters.postalCode } });
+    }
+
+    const startFrom = parseDate(filters?.startFrom);
+    if (startFrom) {
+      andConditions.push({ startAt: { gte: startFrom } });
+    }
+
+    const startTo = parseDate(filters?.startTo);
+    if (startTo) {
+      andConditions.push({ startAt: { lte: startTo } });
+    }
+
+    if (typeof filters?.shortNotice === 'boolean') {
+      andConditions.push({ shortNotice: filters.shortNotice });
+    }
+
+    if (typeof filters?.hasProvider === 'boolean') {
+      andConditions.push({
+        assignments: filters.hasProvider ? { some: {} } : { none: {} },
+      });
+    }
+
+    if (filters?.clientId) {
+      andConditions.push({ clientId: filters.clientId });
+    }
+
+    if (filters?.providerId) {
+      andConditions.push({
+        assignments: { some: { providerId: filters.providerId } },
+      });
+    }
+
+    if (filters?.search) {
+      const term = filters.search.trim();
+      if (term.length > 0) {
+        andConditions.push({
+          OR: [
+            { id: term },
+            { client: { email: { contains: term, mode: 'insensitive' } } },
+            { client: { firstName: { contains: term, mode: 'insensitive' } } },
+            { client: { lastName: { contains: term, mode: 'insensitive' } } },
+            { addressCity: { contains: term, mode: 'insensitive' } },
+            { addressPostalCode: { startsWith: term } },
+          ],
+        });
+      }
+    }
+
+    const where =
+      andConditions.length === 1
+        ? andConditions[0]
+        : andConditions.length > 1
+        ? { AND: andConditions }
+        : undefined;
 
     const bookings = await this.prisma.booking.findMany({
-      ...(Object.keys(where).length ? { where } : {}),
+      ...(where ? { where } : {}),
       include: {
         assignments: true,
         auditLog: true,
@@ -474,6 +578,7 @@ export class BookingsService {
     const isShortNotice =
       (payload.shortNotice ?? autoShortNotice) || leadTimeDays <= BookingsService.SHORT_NOTICE_WINDOW_DAYS;
     const normalizedMode: BookingMode = isShortNotice ? 'smart_match' : payload.mode;
+    const allowImmediateShortNoticeDispatch = actorUser ? this.isElevated(actorUser) : false;
     const assignmentInput: CreateBookingDto = {
       ...payload,
       mode: normalizedMode,
@@ -483,7 +588,10 @@ export class BookingsService {
       ? { providerIds: [], requiredProviders: assignmentInput.requiredProviders ?? 1 }
       : await this.buildAssignmentPlan(assignmentInput, matchingCriteria);
     const normalizedProviderIds = assignmentPlan.providerIds;
-    const status = this.resolveInitialStatus({ mode: normalizedMode, providerIds: normalizedProviderIds });
+    const initialStatus: BookingStatus =
+      isShortNotice && !allowImmediateShortNoticeDispatch
+        ? 'draft'
+        : this.resolveInitialStatus({ mode: normalizedMode, providerIds: normalizedProviderIds });
     const attachmentInput = this.buildAttachmentInput(payload.attachments ?? [], actorId);
     const depositHoldCents = isShortNotice
       ? this.resolveShortNoticeDeposit({
@@ -500,110 +608,140 @@ export class BookingsService {
     const upholsteryDetailsPayload = this.buildUpholsteryDetailsPayload(payload.servicePreferences);
     const additionalInstructions = payload.servicePreferences?.additionalInstructions?.trim();
     const soilLevel = this.toPrismaSoilLevel(payload.servicePreferences?.soilLevel);
-    const couponCode = payload.couponCode?.trim();
-
-    const booking = await this.prisma.booking.create({
-      data: {
-        client: clientId ? { connect: { id: clientId } } : undefined,
-        guestToken: options.guestToken ?? null,
-        company: payload.companyId ? { connect: { id: payload.companyId } } : undefined,
+    const couponCodeInput = payload.couponCode?.trim() ?? '';
+    let promoEvaluation: PromoCodeEvaluation | null = null;
+    if (couponCodeInput) {
+      promoEvaluation = await this.promoCodes.evaluateForBooking({
+        code: couponCodeInput,
         service: payload.service,
-        surfacesSquareMeters: payload.surfacesSquareMeters ?? null,
-        durationHours: payload.durationHours ?? null,
-        recommendedHours: payload.recommendedHours ?? null,
-        durationManuallyAdjusted: payload.durationManuallyAdjusted ?? false,
-        startAt: new Date(payload.startAt),
-        endAt: new Date(payload.endAt),
-        frequency: BookingMapper.toPrismaFrequency(normalizedFrequency),
-        mode: BookingMapper.toPrismaMode(normalizedMode),
-        ecoPreference: BookingMapper.toPrismaEcoPreference(payload.ecoPreference),
-        couponCode: couponCode ?? undefined,
-        addressStreetLine1: payload.address.streetLine1,
-        addressStreetLine2: payload.address.streetLine2,
-        addressPostalCode: payload.address.postalCode,
-        addressCity: payload.address.city,
-        addressCountryCode: payload.address.countryCode,
-        addressAccessNotes: payload.address.accessNotes,
-        billingStreetLine1: billingAddress?.streetLine1,
-        billingStreetLine2: billingAddress?.streetLine2,
-        billingPostalCode: billingAddress?.postalCode,
-        billingCity: billingAddress?.city,
-        billingCountryCode: billingAddress?.countryCode,
-        billingAccessNotes: billingAddress?.accessNotes,
-        contactFirstName: contactDetails?.firstName,
-        contactLastName: contactDetails?.lastName,
-        contactCompany: contactDetails?.company,
-        contactPhone: contactDetails?.phone,
-        contactStreetLine1: contactAddress?.streetLine1,
-        contactStreetLine2: contactAddress?.streetLine2,
-        contactPostalCode: contactAddress?.postalCode,
-        contactCity: contactAddress?.city,
-        contactCountryCode: contactAddress?.countryCode,
-        contactAccessNotes: contactAddress?.accessNotes,
-        onsiteContactFirstName: onsiteContact?.firstName,
-        onsiteContactLastName: onsiteContact?.lastName,
-        onsiteContactPhone: onsiteContact?.phone,
-        status: BookingMapper.toPrismaStatus(status),
-        pricingSubtotalCents: pricing.subtotalCents,
-        pricingEcoCents: pricing.ecoSurchargeCents,
-        pricingLoyaltyCents: pricing.loyaltyCreditsCents,
-        pricingExtrasCents: pricing.extrasCents,
-        pricingTaxCents: pricing.taxCents,
-        pricingCurrency: pricing.currency,
-        pricingTotalCents: pricing.totalCents,
-        notes: payload.notes,
-        opsNotes: payload.opsNotes,
-        providerNotes: payload.providerNotes,
-        reminderAt: payload.reminderAt ? new Date(payload.reminderAt) : undefined,
-        reminderNotes: payload.reminderNotes,
-        requiredProviders: assignmentPlan.requiredProviders,
-        preferredTeam: assignmentPlan.preferredTeamId
-          ? { connect: { id: assignmentPlan.preferredTeamId } }
-          : undefined,
-        assignedTeam: assignmentPlan.teamId
-          ? { connect: { id: assignmentPlan.teamId } }
-          : undefined,
-        assignments: normalizedProviderIds.length
-          ? {
-              create: normalizedProviderIds.map((providerId) => ({
-                provider: { connect: { id: providerId } },
-                team: assignmentPlan.teamId ? { connect: { id: assignmentPlan.teamId } } : undefined,
-              })),
-            }
-          : undefined,
-        attachments: attachmentInput.length
-          ? {
-              create: attachmentInput,
-            }
-          : undefined,
-        auditLog: {
-          create: {
-            actor: actorId ? { connect: { id: actorId } } : undefined,
-            action: 'created',
-            metadata: {
-              status,
-              providerIds: normalizedProviderIds,
-              teamId: assignmentPlan.teamId ?? assignmentPlan.preferredTeamId ?? null,
-              shortNotice: isShortNotice,
-              leadTimeDays,
+        postalCode: payload.address.postalCode,
+        bookingTotalCents: pricing.totalCents,
+        clientId,
+      });
+    }
+
+    this.logger.log(
+      `[Checkout] PMA init started service=${payload.service} shortNotice=${isShortNotice} client=${
+        clientId ?? options.guestToken ?? 'guest'
+      } startAt=${payload.startAt}`
+    );
+
+    const booking = (await this.prisma.$transaction(async (tx) => {
+      const created = await tx.booking.create({
+        data: {
+          client: clientId ? { connect: { id: clientId } } : undefined,
+          guestToken: options.guestToken ?? null,
+          company: payload.companyId ? { connect: { id: payload.companyId } } : undefined,
+          service: payload.service,
+          surfacesSquareMeters: payload.surfacesSquareMeters ?? null,
+          durationHours: payload.durationHours ?? null,
+          recommendedHours: payload.recommendedHours ?? null,
+          durationManuallyAdjusted: payload.durationManuallyAdjusted ?? false,
+          startAt: new Date(payload.startAt),
+          endAt: new Date(payload.endAt),
+          frequency: BookingMapper.toPrismaFrequency(normalizedFrequency),
+          mode: BookingMapper.toPrismaMode(normalizedMode),
+          ecoPreference: BookingMapper.toPrismaEcoPreference(payload.ecoPreference),
+          addressStreetLine1: payload.address.streetLine1,
+          addressStreetLine2: payload.address.streetLine2,
+          addressPostalCode: payload.address.postalCode,
+          addressCity: payload.address.city,
+          addressCountryCode: payload.address.countryCode,
+          addressAccessNotes: payload.address.accessNotes,
+          billingStreetLine1: billingAddress?.streetLine1,
+          billingStreetLine2: billingAddress?.streetLine2,
+          billingPostalCode: billingAddress?.postalCode,
+          billingCity: billingAddress?.city,
+          billingCountryCode: billingAddress?.countryCode,
+          billingAccessNotes: billingAddress?.accessNotes,
+          contactFirstName: contactDetails?.firstName,
+          contactLastName: contactDetails?.lastName,
+          contactCompany: contactDetails?.company,
+          contactPhone: contactDetails?.phone,
+          contactStreetLine1: contactAddress?.streetLine1,
+          contactStreetLine2: contactAddress?.streetLine2,
+          contactPostalCode: contactAddress?.postalCode,
+          contactCity: contactAddress?.city,
+          contactCountryCode: contactAddress?.countryCode,
+          contactAccessNotes: contactAddress?.accessNotes,
+          onsiteContactFirstName: onsiteContact?.firstName,
+          onsiteContactLastName: onsiteContact?.lastName,
+          onsiteContactPhone: onsiteContact?.phone,
+          status: BookingMapper.toPrismaStatus(initialStatus),
+          pricingSubtotalCents: pricing.subtotalCents,
+          pricingEcoCents: pricing.ecoSurchargeCents,
+          pricingLoyaltyCents: pricing.loyaltyCreditsCents,
+          pricingExtrasCents: pricing.extrasCents,
+          pricingTaxCents: pricing.taxCents,
+          pricingCurrency: pricing.currency,
+          pricingTotalCents: pricing.totalCents,
+          notes: payload.notes,
+          opsNotes: payload.opsNotes,
+          providerNotes: payload.providerNotes,
+          reminderAt: payload.reminderAt ? new Date(payload.reminderAt) : undefined,
+          reminderNotes: payload.reminderNotes,
+          requiredProviders: assignmentPlan.requiredProviders,
+          preferredTeam: assignmentPlan.preferredTeamId
+            ? { connect: { id: assignmentPlan.preferredTeamId } }
+            : undefined,
+          assignedTeam: assignmentPlan.teamId
+            ? { connect: { id: assignmentPlan.teamId } }
+            : undefined,
+          assignments: normalizedProviderIds.length
+            ? {
+                create: normalizedProviderIds.map((providerId) => ({
+                  provider: { connect: { id: providerId } },
+                  team: assignmentPlan.teamId ? { connect: { id: assignmentPlan.teamId } } : undefined,
+                })),
+              }
+            : undefined,
+          attachments: attachmentInput.length
+            ? {
+                create: attachmentInput,
+              }
+            : undefined,
+          auditLog: {
+            create: {
+              actor: actorId ? { connect: { id: actorId } } : undefined,
+              action: 'created',
+              metadata: {
+                status: initialStatus,
+                providerIds: normalizedProviderIds,
+                teamId: assignmentPlan.teamId ?? assignmentPlan.preferredTeamId ?? null,
+                shortNotice: isShortNotice,
+                leadTimeDays,
+              },
             },
           },
+          shortNotice: isShortNotice,
+          leadTimeDays,
+          shortNoticeDepositCents: depositHoldCents ?? null,
+          soilLevel: soilLevel ?? undefined,
+          cleaningPreferences: cleaningPreferencesPayload ?? undefined,
+          upholsteryDetails: upholsteryDetailsPayload ?? undefined,
+          additionalInstructions: additionalInstructions ?? undefined,
         },
-        shortNotice: isShortNotice,
-        leadTimeDays,
-        shortNoticeDepositCents: depositHoldCents ?? null,
-        soilLevel: soilLevel ?? undefined,
-        cleaningPreferences: cleaningPreferencesPayload ?? undefined,
-        upholsteryDetails: upholsteryDetailsPayload ?? undefined,
-        additionalInstructions: additionalInstructions ?? undefined,
-      },
-      include: {
-        assignments: true,
-        auditLog: true,
-        attachments: true,
-        fallbackTeamCandidate: { include: { members: true } },
-      },
-    });
+        include: BOOKING_RELATION_INCLUDE,
+      });
+
+      if (promoEvaluation) {
+        await this.promoCodes.applyEvaluation({
+          tx,
+          bookingId: created.id,
+          clientId,
+          currency: pricing.currency,
+          evaluation: promoEvaluation,
+          skipClear: true,
+        });
+        const refreshed = await tx.booking.findUnique({
+          where: { id: created.id },
+          include: BOOKING_RELATION_INCLUDE,
+        });
+        return refreshed ?? created;
+      }
+
+      return created;
+    })) as BookingWithRelations;
 
     let paymentSecrets:
       | {
@@ -615,9 +753,10 @@ export class BookingsService {
     const shouldInitializePayment =
       Boolean(clientId) &&
       (normalizedProviderIds.length > 0 || (isShortNotice && (depositHoldCents ?? 0) > 0));
+    let paymentInitLogged = false;
     if (shouldInitializePayment && actorUser) {
       try {
-        paymentSecrets = await this.payments.initializeBookingPayment({
+        const paymentInitResult = await this.payments.initializeBookingPayment({
           bookingId: booking.id,
           client: {
             id: clientId!,
@@ -631,95 +770,78 @@ export class BookingsService {
               : depositHoldCents ?? pricing.totalCents,
           currency: pricing.currency,
         });
+        paymentSecrets = {
+          paymentIntentClientSecret: paymentInitResult.paymentIntentClientSecret,
+          setupIntentClientSecret: paymentInitResult.setupIntentClientSecret,
+          checkoutUrl: paymentInitResult.checkoutUrl,
+        };
+        this.logger.log(
+          `[Checkout] PMA init result booking=${booking.id} provider=${paymentInitResult.provider} checkoutUrl=${
+            paymentInitResult.checkoutUrl ?? 'n/a'
+          }`
+        );
+        paymentInitLogged = true;
       } catch (error) {
         this.logger.error('Failed to initialize payment intent', error instanceof Error ? error.stack : undefined);
       }
     }
-
-    const bookingWithRelations = booking as BookingWithRelations;
-
-    if (actorId) {
-      await this.bookingNotifications.notifyParticipants({
-        booking: bookingWithRelations,
-        type: NotificationType.BOOKING_STATUS,
-        payload: {
-          event: 'created',
-          status,
-          actorId,
-        },
-      });
+    if (!paymentInitLogged) {
+      this.logger.log(
+        `[Checkout] PMA init result booking=${booking.id} provider=${
+          shouldInitializePayment ? 'unavailable' : 'skipped'
+        } checkoutUrl=null`
+      );
     }
 
-    const statusStage = this.resolveMatchingStageFromStatus(status);
-    if (statusStage && actorId) {
-      await this.bookingNotifications.notifyMatchingProgress({
-        booking: bookingWithRelations,
-        payload: {
-          ...statusStage,
-          contextKey: matchingContextKey,
-          actorId,
-        },
-      });
+    const bookingWithRelations = booking;
+    if (initialStatus === 'draft') {
+      this.logger.log(
+        `[Checkout] Draft booking created booking=${booking.id} shortNotice=${isShortNotice} deposit=${
+          depositHoldCents ?? 0
+        }`
+      );
     }
 
-    if (actorId) {
-      await this.bookingNotifications.notifyMatchingProgress({
+    const shouldEmitNotifications = this.shouldEmitBookingNotifications(
+      initialStatus,
+      allowImmediateShortNoticeDispatch
+    );
+    if (shouldEmitNotifications) {
+      await this.emitBookingActivationNotifications({
         booking: bookingWithRelations,
-        payload: {
-          stage: 'assignment',
-          status: normalizedProviderIds.length > 0 ? 'completed' : 'pending',
-          count: normalizedProviderIds.length,
-          providerIds: normalizedProviderIds,
-          mode: normalizedMode,
-          actorId,
-          contextKey: matchingContextKey,
-        },
+        actorId,
+        status: initialStatus,
+        providerIds: normalizedProviderIds,
+        mode: normalizedMode,
+        matchingContextKey,
+        attachmentCount: attachmentInput.length,
       });
-
-      await this.emitMatchingProgress(actorId, {
-        stage: 'booking',
-        status: 'completed',
-        bookingId: booking.id,
-        contextKey: matchingContextKey,
-      });
+      this.logger.log(`[Checkout] Notifications dispatched booking=${booking.id} status=${initialStatus}`);
+    } else {
+      this.logger.log(
+        `[Checkout] Notifications suppressed because status=${initialStatus} booking=${booking.id}`
+      );
     }
 
-    if (isShortNotice) {
+    if (isShortNotice && allowImmediateShortNoticeDispatch) {
       await this.handleShortNoticeWorkflow({
         booking: bookingWithRelations,
         criteria: matchingCriteria,
         actorId,
         contextKey: matchingContextKey,
       });
-    }
-
-    if (normalizedProviderIds.length > 0) {
-      await this.bookingNotifications.notifyParticipants({
-        booking: bookingWithRelations,
-        type: NotificationType.BOOKING_ASSIGNMENT,
-        payload: {
-          event: 'provider_assigned',
-          providerIds: normalizedProviderIds,
-          ...(actorId ? { actorId } : {}),
-        },
-        includeClient: false,
-        providerTargets: normalizedProviderIds,
-      });
-    }
-
-    if (attachmentInput.length > 0 && actorId) {
-      await this.bookingNotifications.notifyParticipants({
-        booking: bookingWithRelations,
-        type: NotificationType.BOOKING_STATUS,
-        payload: {
-          event: 'attachment_uploaded',
-          count: attachmentInput.length,
-          actorId,
-        },
-      });
+    } else if (isShortNotice) {
+      this.logger.log(
+        `[ShortNotice] booking=${booking.id} deferred until payment confirmation (status=${initialStatus})`
+      );
     }
 
     const domainBooking = BookingMapper.toDomain(bookingWithRelations);
+    this.logger.log(
+      `[Bookings] Created booking=${booking.id} mode=${normalizedMode} shortNotice=${isShortNotice} status=${initialStatus} paymentInit=${Boolean(
+        paymentSecrets?.checkoutUrl || paymentSecrets?.paymentIntentClientSecret
+      )}`
+    );
     if (paymentSecrets) {
       return {
         ...domainBooking,
@@ -736,7 +858,7 @@ export class BookingsService {
     let newlyAssignedProviders: string[] = [];
     let assignmentsMutated = false;
 
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = (await this.prisma.$transaction(async (tx) => {
       const existing = await tx.booking.findUnique({
         where: { id },
         include: {
@@ -808,6 +930,22 @@ export class BookingsService {
         priceCeilingCents: pricing?.subtotalCents ?? existing.pricingSubtotalCents,
         requiredProviders: payload.requiredProviders ?? existing.requiredProviders ?? 1,
       });
+
+      const couponInput = payload.couponCode !== undefined ? payload.couponCode?.trim() ?? '' : undefined;
+      let promoEvaluationUpdate: PromoCodeEvaluation | null = null;
+      if (couponInput) {
+        promoEvaluationUpdate = await this.promoCodes.evaluateForBooking(
+          {
+            code: couponInput,
+            service: payload.service ?? existing.service,
+            postalCode: payload.address?.postalCode ?? existing.addressPostalCode,
+            bookingTotalCents: pricing?.totalCents ?? existing.pricingTotalCents,
+            clientId: existing.clientId,
+            excludeBookingId: existing.id,
+          },
+          tx
+        );
+      }
 
       const elevated = this.isElevated(user);
       const actorId = user.id;
@@ -904,7 +1042,7 @@ export class BookingsService {
       const additionalInstructionsUpdate =
         servicePreferencesUpdate?.additionalInstructions?.trim();
 
-      await tx.booking.update({
+      const updatedRecord = await tx.booking.update({
         where: { id },
         data: {
           company:
@@ -926,8 +1064,6 @@ export class BookingsService {
             : undefined,
           mode: payload.mode ? BookingMapper.toPrismaMode(payload.mode) : undefined,
           ecoPreference: payload.ecoPreference ? BookingMapper.toPrismaEcoPreference(payload.ecoPreference) : undefined,
-          couponCode:
-            payload.couponCode !== undefined ? (payload.couponCode?.trim() || null) : undefined,
           addressStreetLine1: payload.address?.streetLine1,
           addressStreetLine2: payload.address?.streetLine2,
           addressPostalCode: payload.address?.postalCode,
@@ -1005,12 +1141,23 @@ export class BookingsService {
             : undefined,
         },
         include: {
-          assignments: true,
-          auditLog: true,
-          attachments: true,
-          fallbackTeamCandidate: { include: { members: true } },
+          ...BOOKING_RELATION_INCLUDE,
         },
       });
+
+      if (payload.couponCode !== undefined) {
+        if (couponInput) {
+          await this.promoCodes.applyEvaluation({
+            tx,
+            bookingId: updatedRecord.id,
+            clientId: updatedRecord.clientId,
+            currency: pricing?.currency ?? updatedRecord.pricingCurrency,
+            evaluation: promoEvaluationUpdate!,
+          });
+        } else {
+          await this.promoCodes.removeBookingPromo(tx, updatedRecord.id);
+        }
+      }
 
       if (providerTargets !== undefined) {
         assignmentsMutated = true;
@@ -1039,22 +1186,23 @@ export class BookingsService {
 
       newlyAssignedProviders = addedProviders;
 
-      return tx.booking.findUnique({
+      const finalBooking = await tx.booking.findUnique({
         where: { id },
-        include: {
-          assignments: true,
-          auditLog: true,
-          attachments: true,
-          fallbackTeamCandidate: { include: { members: true } },
-        },
+        include: BOOKING_RELATION_INCLUDE,
       });
-    });
+
+      if (!finalBooking) {
+        throw new NotFoundException('BOOKING_NOT_FOUND');
+      }
+
+      return finalBooking as BookingWithRelations;
+    })) as BookingWithRelations;
 
     if (!updated) {
       throw new NotFoundException('BOOKING_NOT_FOUND');
     }
 
-    const bookingWithRelations = updated as BookingWithRelations;
+    const bookingWithRelations = updated;
 
     if (statusChangedTo) {
       await this.bookingNotifications.notifyParticipants({
@@ -1350,6 +1498,10 @@ export class BookingsService {
     }
 
     return { OR: orConditions };
+  }
+
+  private shouldHideDrafts(user: User): boolean {
+    return this.isClient(user) || this.isCompany(user);
   }
 
   private async assertBookingAccess(
@@ -2067,6 +2219,204 @@ export class BookingsService {
     return candidates.length ? candidates[0]! : 0;
   }
 
+  private shouldEmitBookingNotifications(status: BookingStatus, allowImmediateShortNoticeDispatch: boolean): boolean {
+    if (status !== 'draft') {
+      return true;
+    }
+    return allowImmediateShortNoticeDispatch;
+  }
+
+  private async emitBookingActivationNotifications(options: {
+    booking: BookingWithRelations;
+    actorId?: string | null;
+    status: BookingStatus;
+    providerIds: string[];
+    mode: BookingMode;
+    matchingContextKey: string;
+    attachmentCount: number;
+  }) {
+    const { booking, actorId, status, providerIds, mode, matchingContextKey, attachmentCount } = options;
+
+    if (actorId) {
+      await this.bookingNotifications.notifyParticipants({
+        booking,
+        type: NotificationType.BOOKING_STATUS,
+        payload: {
+          event: 'created',
+          status,
+          actorId,
+        },
+      });
+    }
+
+    const statusStage = this.resolveMatchingStageFromStatus(status);
+    if (statusStage && actorId) {
+      await this.bookingNotifications.notifyMatchingProgress({
+        booking,
+        payload: {
+          ...statusStage,
+          actorId,
+          contextKey: matchingContextKey,
+        },
+      });
+    }
+
+    if (actorId) {
+      await this.bookingNotifications.notifyMatchingProgress({
+        booking,
+        payload: {
+          stage: 'assignment',
+          status: providerIds.length > 0 ? 'completed' : 'pending',
+          count: providerIds.length,
+          providerIds,
+          mode,
+          actorId,
+          contextKey: matchingContextKey,
+        },
+      });
+
+      await this.emitMatchingProgress(actorId, {
+        stage: 'booking',
+        status: 'completed',
+        bookingId: booking.id,
+        contextKey: matchingContextKey,
+      });
+    }
+
+    if (providerIds.length > 0) {
+      await this.bookingNotifications.notifyParticipants({
+        booking,
+        type: NotificationType.BOOKING_ASSIGNMENT,
+        payload: {
+          event: 'provider_assigned',
+          providerIds,
+          ...(actorId ? { actorId } : {}),
+        },
+        includeClient: false,
+        providerTargets: providerIds,
+      });
+    }
+
+    if (attachmentCount > 0 && actorId) {
+      await this.bookingNotifications.notifyParticipants({
+        booking,
+        type: NotificationType.BOOKING_STATUS,
+        payload: {
+          event: 'attachment_uploaded',
+          count: attachmentCount,
+          actorId,
+        },
+      });
+    }
+  }
+
+  async dispatchShortNoticeBookingAfterPayment(bookingId: string, options: { actorId?: string | null } = {}) {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        assignments: true,
+        auditLog: true,
+        attachments: true,
+        fallbackTeamCandidate: { include: { members: true } },
+      },
+    });
+    if (!booking) {
+      this.logger.warn(`[ShortNotice] Unable to dispatch booking=${bookingId}: not found.`);
+      return false;
+    }
+    if (!booking.shortNotice) {
+      this.logger.debug(`[ShortNotice] Booking ${bookingId} is not flagged as short notice. Skipping dispatch.`);
+      return false;
+    }
+
+    const existingInvitations = await this.prisma.bookingInvitation.count({
+      where: { bookingId },
+    });
+    if (existingInvitations > 0) {
+      this.logger.debug(
+        `[ShortNotice] booking=${bookingId} already has ${existingInvitations} invitation(s). Skipping deferred dispatch.`
+      );
+      return false;
+    }
+
+    const service = BookingMapper.toDomainService(booking.service);
+    const ecoPreference = BookingMapper.toDomainEcoPreference(booking.ecoPreference);
+    const criteria = this.buildMatchingCriteria({
+      service,
+      ecoPreference,
+      startAt: booking.startAt,
+      endAt: booking.endAt,
+      city: booking.addressCity ?? undefined,
+      clientId: booking.clientId ?? undefined,
+      priceCeilingCents: booking.pricingSubtotalCents ?? undefined,
+      requiredProviders: booking.requiredProviders ?? undefined,
+    });
+    const contextKey = this.buildMatchingContextKey({
+      service,
+      city: booking.addressCity ?? undefined,
+      postalCode: booking.addressPostalCode ?? undefined,
+      startAt: booking.startAt.toISOString(),
+      endAt: booking.endAt.toISOString(),
+      ecoPreference,
+    });
+
+    const actorId = options.actorId ?? booking.clientId ?? null;
+    await this.handleShortNoticeWorkflow({
+      booking: booking as BookingWithRelations,
+      criteria,
+      actorId,
+      contextKey,
+    });
+
+    if (booking.status === PrismaBookingStatus.DRAFT) {
+      await this.prisma.booking.update({
+        where: { id: booking.id },
+        data: {
+          status: PrismaBookingStatus.PENDING_PROVIDER,
+          auditLog: {
+            create: {
+              actor: actorId ? { connect: { id: actorId } } : undefined,
+              action: 'status_changed',
+              metadata: {
+                from: 'draft',
+                to: 'pending_provider',
+                reason: 'payment_confirmed',
+              },
+            },
+          },
+        },
+      });
+    }
+
+    const refreshed = await this.prisma.booking.findUnique({
+      where: { id: booking.id },
+      include: {
+        assignments: true,
+        auditLog: true,
+        attachments: true,
+        fallbackTeamCandidate: { include: { members: true } },
+      },
+    });
+
+    if (refreshed) {
+      this.logger.log(`[Checkout] Booking confirmed after payment booking=${booking.id}`);
+      await this.emitBookingActivationNotifications({
+        booking: refreshed as BookingWithRelations,
+        actorId,
+        status: BookingMapper.toDomainStatus(refreshed.status),
+        providerIds: refreshed.assignments.map((assignment) => assignment.providerId),
+        mode: BookingMapper.toDomainMode(refreshed.mode),
+        matchingContextKey: contextKey,
+        attachmentCount: refreshed.attachments.length,
+      });
+      this.logger.log(
+        `[Checkout] Notifications dispatched AFTER payment confirmation booking=${booking.id}`
+      );
+    }
+
+    return true;
+  }
+
   private async handleShortNoticeWorkflow(params: {
     booking: BookingWithRelations;
     criteria: BookingMatchingCriteria;
@@ -2076,6 +2426,9 @@ export class BookingsService {
     const candidateLimit = Math.max(params.booking.requiredProviders * 6, 12);
     const providerIds = await this.matching.matchProviders(params.criteria, candidateLimit);
     if (!providerIds.length) {
+      this.logger.warn(
+        `[ShortNotice] booking=${params.booking.id} no providers found (criteria city=${params.criteria.city ?? 'n/a'})`
+      );
       if (params.actorId) {
         await this.bookingNotifications.notifyMatchingProgress({
           booking: params.booking,
@@ -2089,6 +2442,9 @@ export class BookingsService {
       }
       return;
     }
+    this.logger.log(
+      `[ShortNotice] booking=${params.booking.id} broadcasting to ${providerIds.length} provider(s)`
+    );
 
     await this.prisma.bookingInvitation.createMany({
       data: providerIds.map((providerId) => ({
@@ -2136,6 +2492,7 @@ export class BookingsService {
         event: 'short_notice_invitation',
         providerIds,
       },
+      dedupeKey: `short_notice_invite:${params.booking.id}`,
     });
   }
 

@@ -10,7 +10,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { SupportModule } from './support/support.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ProfileModule } from './profile/profile.module';
-import { AdminModule } from './admin/admin.module';
+import { EmployeeModule } from './employee/employee.module';
 import { ProviderModule } from './provider/provider.module';
 import { GeocodingModule } from './geocoding/geocoding.module';
 import { PaymentsModule } from './payments/payments.module';
@@ -18,6 +18,7 @@ import { DocumentsModule } from './documents/documents.module';
 import { OnfidoModule } from './onfido/onfido.module';
 import { PricingModule } from './pricing/pricing.module';
 import { DisputesModule } from './disputes/disputes.module';
+import { FollowUpModule } from './follow-up/follow-up.module';
 
 @Module({
   imports: [
@@ -30,7 +31,7 @@ import { DisputesModule } from './disputes/disputes.module';
     SupportModule,
     NotificationsModule,
     ProfileModule,
-    AdminModule,
+    EmployeeModule,
     ProviderModule,
     GeocodingModule,
     PaymentsModule,
@@ -38,6 +39,7 @@ import { DisputesModule } from './disputes/disputes.module';
     DisputesModule,
     DocumentsModule,
     OnfidoModule,
+    FollowUpModule,
   ],
   controllers: [AppController],
   providers: [AppService],

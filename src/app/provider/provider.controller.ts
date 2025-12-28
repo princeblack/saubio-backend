@@ -4,6 +4,7 @@ import type {
   BookingRequest,
   PaymentRecord,
   ProviderDashboardResponse,
+  ProviderEarningsResponse,
   ProviderProfile,
   ProviderResourceItem,
   ProviderServiceCatalogResponse,
@@ -19,6 +20,7 @@ import { UpdateProviderMissionStatusDto } from './dto/update-provider-mission-st
 import { UpdateProviderProfileDto } from './dto/update-provider-profile.dto';
 import { UpdateProviderServicesDto } from './dto/update-provider-services.dto';
 import { CancelProviderMissionDto } from './dto/cancel-provider-mission.dto';
+import { ProviderEarningsFiltersDto } from './dto/provider-earnings-filters.dto';
 import { CompleteIdentityDto } from './dto/complete-identity.dto';
 import { CompleteAddressDto } from './dto/complete-address.dto';
 import { CompletePhoneDto } from './dto/complete-phone.dto';
@@ -28,6 +30,8 @@ import { CompleteWelcomeSessionDto } from './dto/complete-welcome-session.dto';
 import { UploadIdentityDocumentDto } from './dto/upload-identity-document.dto';
 import { UpdateProviderAvailabilityDto } from './dto/update-provider-availability.dto';
 import { CreateProviderTimeOffDto } from './dto/create-provider-time-off.dto';
+import { ProviderInvitationFiltersDto } from './dto/provider-invitation-filters.dto';
+import { UploadProfilePhotoDto } from './dto/upload-profile-photo.dto';
 
 @ApiTags('provider')
 @Controller('provider')
@@ -39,6 +43,14 @@ export class ProviderController {
   @Get('dashboard')
   getDashboard(@CurrentUser() user: User): Promise<ProviderDashboardResponse> {
     return this.providerService.getDashboard(user);
+  }
+
+  @Get('earnings')
+  getEarnings(
+    @CurrentUser() user: User,
+    @Query() filters: ProviderEarningsFiltersDto
+  ): Promise<ProviderEarningsResponse> {
+    return this.providerService.getEarnings(user, filters);
   }
 
   @Get('missions')
@@ -95,6 +107,14 @@ export class ProviderController {
     return this.providerService.updateProfile(user, payload);
   }
 
+  @Post('profile/photo')
+  uploadProfilePhoto(
+    @CurrentUser() user: User,
+    @Body() payload: UploadProfilePhotoDto
+  ): Promise<ProviderProfile> {
+    return this.providerService.uploadProfilePhoto(user, payload);
+  }
+
   @Get('services')
   getServiceCatalog(@CurrentUser() user: User): Promise<ProviderServiceCatalogResponse> {
     return this.providerService.getServiceCatalog(user);
@@ -109,8 +129,8 @@ export class ProviderController {
   }
 
   @Get('invitations')
-  listInvitations(@CurrentUser() user: User) {
-    return this.providerService.listShortNoticeInvitations(user);
+  listInvitations(@CurrentUser() user: User, @Query() filters: ProviderInvitationFiltersDto) {
+    return this.providerService.listShortNoticeInvitations(user, filters);
   }
 
   @Post('invitations/:invitationId/accept')
@@ -121,6 +141,11 @@ export class ProviderController {
   @Post('invitations/:invitationId/decline')
   declineInvitation(@CurrentUser() user: User, @Param('invitationId') invitationId: string) {
     return this.providerService.declineShortNoticeInvitation(user, invitationId);
+  }
+
+  @Post('invitations/:invitationId/view')
+  markInvitationViewed(@CurrentUser() user: User, @Param('invitationId') invitationId: string) {
+    return this.providerService.markShortNoticeInvitationViewed(user, invitationId);
   }
 
   @Get('onboarding/status')

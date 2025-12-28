@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { BookingsService } from './bookings.service';
 import { BookingsController } from './bookings.controller';
 import { AuthModule } from '../auth/auth.module';
@@ -11,9 +11,10 @@ import { BookingDraftsController } from './booking-drafts.controller';
 import { BookingLocksService } from './booking-locks.service';
 import { TeamPlanningService } from './team-planning.service';
 import { PricingModule } from '../pricing/pricing.module';
+import { MarketingModule } from '../marketing/marketing.module';
 
 @Module({
-  imports: [AuthModule, NotificationsModule, PaymentsModule, PricingModule],
+  imports: [AuthModule, NotificationsModule, forwardRef(() => PaymentsModule), PricingModule, MarketingModule],
   controllers: [BookingsController, MatchingController, BookingDraftsController],
   providers: [
     BookingsService,
@@ -22,6 +23,6 @@ import { PricingModule } from '../pricing/pricing.module';
     BookingLocksService,
     TeamPlanningService,
   ],
-  exports: [BookingNotificationsService, TeamPlanningService],
+  exports: [BookingNotificationsService, TeamPlanningService, BookingsService, BookingMatchingService],
 })
 export class BookingsModule {}

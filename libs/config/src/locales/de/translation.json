@@ -884,12 +884,14 @@
     },
     "scheduleTitle": "Bevorstehender Plan",
     "alertsTitle": "Qualitätswarnungen",
-    "paymentsTitle": "Auszahlungen",
+    "paymentsTitle": "Einnahmen & Auszahlungen",
     "feedbackTitle": "Kundenfeedback",
     "qualityTitle": "Qualität",
     "payments": {
-      "total": "Erhaltene Zahlungen",
-      "pending": "Ausstehend",
+      "total": "Summe verdient (ohne kommende Einsätze)",
+      "validation": "Wartet auf Freigabe",
+      "pending": "Zur Auszahlung (PMA offen)",
+      "paid": "Bereits ausgezahlt",
       "lastPayout": "Letzte Auszahlung"
     },
     "quality": {
@@ -1104,24 +1106,50 @@
     }
   },
   "providerRevenue": {
-    "title": "Umsatz",
-    "subtitle": "Behalten Sie Auszahlungen und anstehende Zahlungen im Blick.",
-    "summaryTitle": "Zahlungsübersicht",
-    "tableTitle": "Zahlungshistorie",
-    "chartTitle": "Umsatzentwicklung",
+    "title": "Einnahmen",
+    "subtitle": "Behalte im Blick, was erledigt ist, was fällig bleibt und was bereits überwiesen wurde.",
+    "overviewTitle": "Überblick",
+    "historyTitle": "PMA-Verlauf",
+    "chartTitle": "Verlauf bestätigter Einnahmen",
+    "tableTitle": "Historie vergüteter Einsätze",
+    "summary": {
+      "total": "Summe verdient (ohne kommende Einsätze)",
+      "awaitingValidation": "Wartet auf Freigabe",
+      "payable": "Zur Auszahlung (PMA offen)",
+      "paid": "Bereits ausgezahlt"
+    },
     "columns": {
       "date": "Datum",
-      "booking": "Einsatz",
-      "amount": "Betrag",
+      "client": "Kunde",
+      "service": "Einsatz",
+      "gross": "Brutto",
+      "commission": "Provision",
+      "net": "Netto",
       "status": "Status"
     },
-    "status": {
-      "captured": "Gebucht",
-      "authorized": "Autorisiert",
-      "pending": "Ausstehend",
-      "processing": "In Bearbeitung",
+    "statuses": {
+      "upcoming": "Anstehend",
+      "awaiting_validation": "Wartet auf Freigabe",
+      "payable": "Zur Auszahlung",
       "paid": "Ausgezahlt"
-    }
+    },
+    "statusDescriptions": {
+      "upcoming": "Einsatz geplant. Betrag ist solange nur eine Schätzung.",
+      "awaiting_validation": "Einsatz beendet, Freigabe läuft noch.",
+      "payable": "Betrag bestätigt. Auszahlung ist terminiert.",
+      "paid": "Gutschrift auf dein Konto erfolgt."
+    },
+    "expectedPayout": "Voraussichtliche Auszahlung am {{date}}",
+    "empty": {
+      "overview": "Hier erscheinen deine Beträge nach deinem ersten abgeschlossenen Einsatz.",
+      "table": "Noch keine vergüteten Einsätze."
+    },
+    "documentsTitle": "Abrechnungen & Rechnungen",
+    "documentsSubtitle": "Lade deine Dokumente herunter, sobald sie verfügbar sind.",
+    "documentsErrorTitle": "Abrechnungen konnten nicht geladen werden",
+    "documentsErrorDescription": "Bitte versuche es gleich noch einmal.",
+    "documentsDownload": "Herunterladen",
+    "documentsEmpty": "Deine Abrechnungen stehen nach der ersten Auszahlung bereit."
   },
   "providerResourcesPage": {
     "title": "Ressourcen",
@@ -1184,6 +1212,41 @@
       "documentsLabel": "{{count}} Dokument(e) gesendet",
       "noDocuments": "Noch kein Dokument hochgeladen",
       "cta": "Dokumente verwalten"
+    },
+    "payout": {
+      "requiredTitle": "Zahlungen aktivieren",
+      "requiredDescription": "Hinterlegen Sie Ihre Bankdaten für Auszahlungen. Alles bleibt in der App, kein externes Login.",
+      "reviewTitle": "Überprüfung läuft",
+      "reviewDescription": "Ihre Bankdaten werden geprüft. Das dauert in der Regel nur wenige Minuten.",
+      "rejectedTitle": "Auszahlung nicht validiert",
+      "rejectedDescription": "Einige Angaben müssen korrigiert werden. Bitte mit einer gültigen IBAN erneut versuchen.",
+      "readyTitle": "Zahlungen aktiviert",
+      "readyDescription": "Ihre Auszahlungsdaten sind bestätigt. Nach jeder Mission wird automatisch überwiesen.",
+      "method": "Methode",
+      "bank": "Banküberweisung",
+      "card": "Karte",
+      "last4": "Letzte Ziffern",
+      "status": "Status",
+      "statusLabel": {
+        "pending": "Zu vervollständigen",
+        "in_review": "In Prüfung",
+        "verified": "Verifiziert",
+        "rejected": "Abgelehnt"
+      },
+      "statusHint": {
+        "pending": "Fügen Sie Ihre Bankdaten hinzu, um die Prüfung zu starten.",
+        "in_review": "Wir prüfen Ihre Angaben. Dies kann einige Minuten dauern.",
+        "rejected": "Die Angaben wurden abgelehnt. Bitte Bankdaten korrigieren und erneut versuchen.",
+        "verified": "Ihre Auszahlungen sind einsatzbereit."
+      },
+      "cta": "Bankdaten speichern",
+      "opening": "Aktivierung läuft…",
+      "error": "Bankdaten können gerade nicht gespeichert werden.",
+      "accountHolder": "Kontoinhaber",
+      "iban": "IBAN",
+      "ibanError": "Ungültige IBAN. Bitte Format prüfen.",
+      "success": "Bankdaten gespeichert. Auszahlungen erfolgen automatisch.",
+      "pendingReview": "Bankdaten gespeichert, Validierung läuft."
     }
   },
   "providerAvailabilityPage": {

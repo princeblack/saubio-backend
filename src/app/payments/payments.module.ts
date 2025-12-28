@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { AppConfigModule } from '../config/app-config.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
@@ -9,9 +9,18 @@ import { InvoiceModule } from './invoice/invoice.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { MollieService } from './mollie.service';
 import { PricingModule } from '../pricing/pricing.module';
+import { BookingsModule } from '../bookings/bookings.module';
 
 @Module({
-  imports: [AppConfigModule, PrismaModule, AuthModule, InvoiceModule, NotificationsModule, PricingModule],
+  imports: [
+    AppConfigModule,
+    PrismaModule,
+    AuthModule,
+    InvoiceModule,
+    NotificationsModule,
+    PricingModule,
+    forwardRef(() => BookingsModule),
+  ],
   controllers: [PaymentsController, PaymentsWebhookController],
   providers: [PaymentsService, MollieService],
   exports: [PaymentsService, MollieService],

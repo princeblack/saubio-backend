@@ -8,6 +8,8 @@ export type PostalCodeLookupResult = PostalCityInfo & {
 
 @Injectable()
 export class PostalCodeService {
+  private cachedEntries: Array<PostalCityInfo & { postalCode: string }> | null = null;
+
   lookup(postalCode: string | null | undefined): PostalCodeLookupResult | null {
     const normalizedPostal = this.normalizePostalCode(postalCode);
     if (!normalizedPostal) {
@@ -66,5 +68,16 @@ export class PostalCodeService {
       .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1).toLowerCase())
       .join(' ');
     return Array.from(new Set([trimmed, title, lower, upper]));
+  }
+
+  listEntries(): Array<PostalCityInfo & { postalCode: string }> {
+    if (this.cachedEntries) {
+      return this.cachedEntries;
+    }
+    this.cachedEntries = Object.entries(postalCityMap).map(([postalCode, info]) => ({
+      postalCode,
+      ...info,
+    }));
+    return this.cachedEntries;
   }
 }

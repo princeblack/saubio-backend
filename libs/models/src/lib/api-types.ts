@@ -2,6 +2,7 @@ import type {
   Address,
   AddressSuggestion,
   BookingContactDetails,
+  BookingInvitationStatus,
   BookingMode,
   BookingRequest,
   BookingServicePreferences,
@@ -16,6 +17,7 @@ import type {
   ProviderProfile,
   ProviderServiceType,
   ProviderServiceZone,
+  ProviderType,
   ServiceCategory,
   SupportCategory,
   SupportPriority,
@@ -25,6 +27,12 @@ import type {
   UserRole,
   DisputeRecord,
   DisputeStatus,
+  PaymentStatus,
+  PaymentMethod,
+  DocumentReference,
+  PromoCodeType,
+  MarketingLandingStatus,
+  ReviewStatus,
 } from './models';
 
 export interface AuthTokens {
@@ -137,10 +145,23 @@ export interface UpdateBookingPayload {
 
 export interface ListBookingsParams {
   status?: BookingStatus;
+  statuses?: BookingStatus[];
   mode?: BookingMode;
   fallbackRequested?: boolean;
   fallbackEscalated?: boolean;
   minRetryCount?: number;
+  service?: ServiceCategory;
+  search?: string;
+  city?: string;
+  postalCode?: string;
+  startFrom?: string;
+  startTo?: string;
+  shortNotice?: boolean;
+  hasProvider?: boolean;
+  clientId?: string;
+  providerId?: string;
+  page?: number;
+  pageSize?: number;
 }
 
 export interface ProviderTeamMemberInput {
@@ -257,6 +278,11 @@ export interface UpdateNotificationPreferencesPayload {
   language?: string;
 }
 
+export interface ProviderInvitationFilters {
+  status?: BookingInvitationStatus;
+  limit?: number;
+}
+
 export type ProfileResponse = ProfileSummary & {
   profileAudits: ProfileAuditEntry[];
   preferences?: UserPreferences;
@@ -355,6 +381,32 @@ export interface ProviderDirectoryDetails extends ProviderDirectoryItem {
   reviews: ProviderReviewSummary[];
 }
 
+export type PostalCoverageReason = 'invalid_postal' | 'postal_not_found' | 'uncovered';
+
+export interface PostalCoverageResponse {
+  postalCode: string;
+  city?: string | null;
+  area?: string | null;
+  state?: string | null;
+  covered: boolean;
+  providerCount: number;
+  reason?: PostalCoverageReason;
+}
+
+export interface PostalFollowUpPayload {
+  email: string;
+  postalCode: string;
+  marketingConsent?: boolean;
+}
+
+export interface PostalFollowUpResponse {
+  id: string;
+  email: string;
+  postalCode: string;
+  marketingConsent: boolean;
+  createdAt: string;
+}
+
 export interface ProviderDashboardMissionSummary {
   id: string;
   client: string;
@@ -428,6 +480,51 @@ export interface ProviderDashboardPaymentsSummary {
   lastPayoutAt: string | null;
 }
 
+export type ProviderEarningStatus = 'upcoming' | 'awaiting_validation' | 'payable' | 'paid';
+
+export interface ProviderMissionEarning {
+  id: string;
+  bookingId: string;
+  service: ServiceCategory;
+  startAt: string;
+  endAt: string;
+  durationHours: number;
+  city?: string;
+  postalCode?: string;
+  client?: string;
+  amountCents: number;
+  grossCents: number;
+  commissionCents: number;
+  status: ProviderEarningStatus;
+  source: 'distribution' | 'projection';
+  expectedPayoutAt?: string | null;
+  estimated?: boolean;
+  payoutReference?: string | null;
+  payoutReleasedAt?: string | null;
+}
+
+export interface ProviderEarningsSummary {
+  totalEarnedCents: number;
+  upcomingCents: number;
+  awaitingValidationCents: number;
+  payableCents: number;
+  paidCents: number;
+  missions: {
+    upcoming: number;
+    awaitingValidation: number;
+    payable: number;
+    paid: number;
+  };
+  thisMonthCents: number;
+  previousMonthCents: number;
+  lastPayoutAt: string | null;
+}
+
+export interface ProviderEarningsResponse {
+  summary: ProviderEarningsSummary;
+  missions: ProviderMissionEarning[];
+}
+
 export interface ProviderResourceItem {
   id: string;
   title: string;
@@ -446,6 +543,7 @@ export interface ProviderDashboardResponse {
   feedback: ProviderDashboardFeedback[];
   quality: ProviderDashboardQuality;
   payments: ProviderDashboardPaymentsSummary;
+  earnings: ProviderEarningsSummary;
   resources: ProviderResourceItem[];
 }
 
@@ -482,6 +580,20 @@ export interface ProviderPaymentsOnboardingPayload {
   businessName?: string;
   email: string;
   country?: string;
+}
+
+export interface ProviderPayoutSetupPayload {
+  accountHolder: string;
+  iban: string;
+  signatureDate?: string;
+}
+
+export interface ProviderBankInfo {
+  accountHolder: string | null;
+  ibanMasked: string | null;
+  bankName?: string | null;
+  status: 'inactive' | 'pending' | 'active' | 'failed';
+  last4?: string | null;
 }
 
 export interface ProviderOnboardingRequest {
@@ -533,6 +645,11 @@ export interface ProviderIdentityDocumentSummary {
 export interface ProviderIdentityDocumentUploadPayload {
   documentType: ProviderIdentityDocumentType;
   side?: ProviderIdentityDocumentSide;
+  fileData: string;
+  fileName?: string;
+}
+
+export interface ProviderProfilePhotoPayload {
   fileData: string;
   fileName?: string;
 }
@@ -695,6 +812,1109 @@ export interface AdminUser {
   lastLoginAt: string | null;
 }
 
+export interface AdminUsersOverviewResponse {
+  stats: {
+    totalUsers: number;
+    clients: number;
+    providers: {
+      total: number;
+      active: number;
+      pending: number;
+      suspended: number;
+    };
+    employees: number;
+    admins: number;
+  };
+  distribution: Array<{ role: UserRole; value: number }>;
+  timeline: Array<{ date: string; clients: number; providers: number }>;
+  recent: AdminUser[];
+}
+
+export interface AdminPaginatedResponse<TItem> {
+  items: TItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface AdminClientListItem {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  createdAt: string;
+  status: 'active' | 'invited' | 'suspended';
+  totalBookings: number;
+  lastBooking: {
+    id: string;
+    status: BookingStatus;
+    startAt: string;
+    totalCents: number;
+  } | null;
+  totalSpentCents: number;
+  type: 'individual' | 'company';
+}
+
+export interface AdminClientAddress {
+  id: string;
+  label: string;
+  streetLine1: string;
+  streetLine2: string | null;
+  postalCode: string;
+  city: string;
+  countryCode: string;
+}
+
+export interface AdminClientBookingSummary {
+  id: string;
+  status: BookingStatus;
+  service: string;
+  startAt: string;
+  totalCents: number;
+  providerName: string | null;
+}
+
+export interface AdminClientPaymentSummary {
+  id: string;
+  amountCents: number;
+  status: PaymentStatus;
+  createdAt: string;
+  method: PaymentMethod | null;
+  bookingId: string | null;
+}
+
+export interface AdminClientDetails extends AdminClientListItem {
+  addresses: AdminClientAddress[];
+  bookings: AdminClientBookingSummary[];
+  payments: AdminClientPaymentSummary[];
+}
+
+export interface AdminBookingParty {
+  id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+}
+
+export interface AdminBookingListItem {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  startAt: string;
+  endAt: string;
+  status: BookingStatus;
+  mode: BookingMode;
+  service: ServiceCategory;
+  city: string;
+  postalCode: string;
+  shortNotice: boolean;
+  matchingRetryCount: number;
+  totalCents: number;
+  client: AdminBookingParty;
+  provider: AdminBookingParty | null;
+  paymentStatus?: PaymentStatus | null;
+}
+
+export interface AdminBookingAssignmentSummary {
+  id: string;
+  provider: AdminBookingParty;
+  status: string;
+  teamId?: string | null;
+  assignedAt: string;
+}
+
+export interface AdminBookingPaymentSummary {
+  id: string;
+  status: PaymentStatus;
+  amountCents: number;
+  method?: PaymentMethod | null;
+  occurredAt: string;
+  externalReference?: string | null;
+}
+
+export interface AdminBookingDetails extends AdminBookingListItem {
+  address: Address;
+  billingAddress?: Address;
+  contact?: BookingContactDetails;
+  onsiteContact?: BookingContactDetails;
+  durationHours?: number | null;
+  recommendedHours?: number | null;
+  frequency: CleaningFrequency;
+  ecoPreference: EcoPreference;
+  notes?: string;
+  opsNotes?: string;
+  providerNotes?: string;
+  attachments: BookingRequest['attachments'];
+  auditLog: BookingRequest['auditLog'];
+  fallbackTeamCandidate?: FallbackTeamCandidate | null;
+  assignments: AdminBookingAssignmentSummary[];
+  payment?: AdminBookingPaymentSummary | null;
+  pricing: BookingRequest['pricing'];
+}
+
+export interface AdminBookingOverviewResponse {
+  totals: {
+    all: number;
+    upcoming: number;
+    completed: number;
+    cancelled: number;
+    shortNotice: number;
+  };
+  shortNoticeRatio: number;
+  statuses: Array<{ status: BookingStatus; count: number }>;
+  paymentStatuses: Array<{ status: PaymentStatus; count: number }>;
+  financials: {
+    revenueTodayCents: number;
+    revenueWeekCents: number;
+    revenueMonthCents: number;
+    averageBasketCents: number;
+  };
+  charts: {
+    bookingsByDay: Array<{ date: string; total: number }>;
+    revenueByWeek: Array<{ week: string; totalCents: number }>;
+  };
+  recent: AdminBookingListItem[];
+}
+
+export interface AdminProviderListItem {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  onboardingStatus: string;
+  identityStatus: string;
+  payoutStatus: string;
+  ratingAverage: number;
+  ratingCount: number;
+  missionsCompleted: number;
+  city: string | null;
+  postalCode: string | null;
+  serviceCategories: ServiceCategory[];
+  status: 'active' | 'invited' | 'suspended';
+  payoutReady: boolean;
+}
+
+export interface AdminProviderDetails extends AdminProviderListItem {
+  createdAt: string;
+  serviceAreas: string[];
+  languages: string[];
+  payoutDetails: {
+    accountHolder: string | null;
+    ibanMasked: string | null;
+    bankName: string | null;
+  };
+  address: {
+    streetLine1: string | null;
+    postalCode: string | null;
+    city: string | null;
+    region: string | null;
+  };
+}
+
+export interface AdminEmployeeListItem {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  createdAt: string;
+  lastLoginAt: string | null;
+  status: 'active' | 'invited' | 'suspended';
+}
+
+export interface AdminRoleSummary {
+  role: UserRole;
+  description: string;
+  permissions: string[];
+  userCount: number;
+}
+
+export interface AdminRolesResponse {
+  roles: AdminRoleSummary[];
+  adminAccounts: Array<{
+    id: string;
+    name: string;
+    email: string;
+    createdAt: string;
+    lastLoginAt: string | null;
+    status: 'active' | 'invited' | 'suspended';
+  }>;
+}
+
+export interface AdminFinancePaymentParty {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export interface AdminFinancePaymentItem {
+  id: string;
+  bookingId: string;
+  occurredAt: string;
+  amountCents: number;
+  platformFeeCents: number;
+  currency: string;
+  status: PaymentStatus;
+  method?: PaymentMethod | null;
+  provider: string;
+  externalReference?: string | null;
+  metadataPurpose?: string | null;
+  client: AdminFinancePaymentParty;
+  service?: string;
+  city?: string;
+  postalCode?: string;
+}
+
+export type ProviderPayoutStatus = 'pending' | 'processing' | 'paid' | 'failed';
+
+export interface AdminFinancePayoutItem {
+  id: string;
+  provider: {
+    id: string;
+    name: string;
+    email: string;
+    ibanMasked?: string | null;
+    payoutActivationStatus?: string | null;
+  };
+  amountCents: number;
+  currency: string;
+  status: ProviderPayoutStatus;
+  createdAt: string;
+  scheduledAt?: string | null;
+  releasedAt?: string | null;
+  externalReference?: string | null;
+  missions: Array<{ bookingId: string; amountCents: number; service?: string; city?: string; startAt?: string }>;
+}
+
+export interface AdminFinanceOverviewResponse {
+  range: { from: string; to: string };
+  totals: {
+    grossRevenueCents: number;
+    netRevenueCents: number;
+    commissionCents: number;
+    payoutPaidCents: number;
+    payoutPendingCents: number;
+    failedAmountCents: number;
+    refundedAmountCents: number;
+  };
+  counts: {
+    paymentsSuccess: number;
+    paymentsPending: number;
+    paymentsFailed: number;
+    paymentsRefunded: number;
+  };
+  charts: {
+    paymentsByDay: Array<{ date: string; grossCents: number; netCents: number; failedCents: number }>;
+    payoutsByWeek: Array<{ week: string; amountCents: number }>;
+  };
+  recent: {
+    payments: AdminFinancePaymentItem[];
+    payouts: AdminFinancePayoutItem[];
+  };
+}
+
+export interface AdminFinanceCommissionRow {
+  bookingId: string;
+  service: string;
+  city: string;
+  startAt: string;
+  totalCents: number;
+  providerShareCents: number;
+  commissionCents: number;
+  taxCents: number;
+}
+
+export interface AdminFinanceCommissionsResponse {
+  range: { from: string; to: string };
+  totals: {
+    commissionCents: number;
+    providerShareCents: number;
+    taxCents: number;
+    bookings: number;
+  };
+  rows: AdminFinanceCommissionRow[];
+}
+
+export interface AdminFinanceExportsResponse {
+  range: { from: string; to: string };
+  available: Array<{
+    type: string;
+    label: string;
+    description?: string;
+    formats: string[];
+    enabled: boolean;
+  }>;
+  recent: Array<{
+    id: string;
+    type: string;
+    createdAt: string;
+    from: string;
+    to: string;
+    format: string;
+    url?: string;
+  }>;
+}
+
+export interface AdminFinanceSettingsResponse {
+  provider: string;
+  mode: 'development' | 'production' | 'test';
+  webhookUrl?: string | null;
+  webhookHealthy?: boolean | null;
+  recentEvents: Array<{ id: string; type: string; status: string; createdAt: string }>;
+  mandates: Array<{ id: string; providerId: string; providerName: string; status: string; updatedAt: string }>;
+}
+
+export interface AdminFinanceInvoiceRecord {
+  id: string;
+  bookingId: string | null;
+  client: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  issuedAt: string;
+  amountCents: number;
+  taxCents?: number | null;
+  currency: string;
+  status: PaymentStatus;
+  method?: PaymentMethod | null;
+  downloadUrl?: string | null;
+}
+
+export interface AdminFinanceStatementRecord {
+  id: string;
+  provider: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  amountCents: number;
+  commissionCents?: number | null;
+  netAmountCents?: number | null;
+  periodStart?: string | null;
+  periodEnd?: string | null;
+  currency: string;
+  status: ProviderPayoutStatus;
+  releasedAt?: string | null;
+}
+
+export interface AdminFinanceInvoicesResponse {
+  range: { from: string; to: string };
+  clientInvoices: AdminFinanceInvoiceRecord[];
+  providerStatements: AdminFinanceStatementRecord[];
+}
+
+export interface AdminPromoCodeListItem {
+  id: string;
+  code: string;
+  description: string;
+  type: PromoCodeType;
+  valueCents: number | null;
+  valuePercent: number | null;
+  isActive: boolean;
+  startsAt: string | null;
+  endsAt: string | null;
+  usageCount: number;
+  maxTotalUsages: number | null;
+  lastUsedAt: string | null;
+}
+
+export interface AdminPromoCodeDetail {
+  id: string;
+  code: string;
+  description: string;
+  type: PromoCodeType;
+  fixedAmountCents: number | null;
+  percentage: number | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  maxTotalUsages: number | null;
+  maxUsagesPerUser: number | null;
+  minBookingTotalCents: number | null;
+  applicableServices: string[];
+  applicablePostalCodes: string[];
+  isActive: boolean;
+  usageCount: number;
+  lastUsedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: { id: string; name: string; email: string } | null;
+}
+
+export interface AdminPromoCodeUsageRecord {
+  id: string;
+  promoCodeId: string;
+  code: string;
+  bookingId: string | null;
+  bookingStatus: BookingStatus | null;
+  bookingService: string | null;
+  bookingCity: string | null;
+  bookingPostalCode: string | null;
+  bookingAmountCents: number | null;
+  client: { id: string; name: string; email: string } | null;
+  usedAt: string;
+  discountCents: number;
+  currency: string;
+  status: string;
+}
+
+export interface AdminMarketingOverviewResponse {
+  stats: {
+    activePromoCodes: number;
+    bookingsWithPromo: number;
+    discountGrantedCents: number;
+  };
+  topCodes: Array<{ id: string; code: string; usageCount: number; discountCents: number }>;
+  recentUsages: AdminPromoCodeUsageRecord[];
+  timeline: Array<{ date: string; usages: number; discountCents: number }>;
+}
+
+export interface AdminMarketingLandingPageSummary {
+  id: string;
+  title: string;
+  slug: string;
+  path: string;
+  status: MarketingLandingStatus;
+  impressions: number;
+  conversions: number;
+  leads: number;
+  conversionRate: number | null;
+  bounceRate: number | null;
+  updatedAt: string;
+}
+
+export interface AdminMarketingLandingPagesResponse {
+  total: number;
+  pages: AdminMarketingLandingPageSummary[];
+}
+
+export interface AdminMarketingSettingsResponse {
+  toggles: {
+    promoCodesEnabled: boolean;
+    referralEnabled: boolean;
+    marketingNotificationsEnabled: boolean;
+  };
+  policy: {
+    maxPromoCodesPerClient: number;
+    stackingRules: string | null;
+    restrictedZones: string | null;
+  };
+  logs: Array<{
+    id: string;
+    label: string;
+    previousValue: string | null;
+    newValue: string | null;
+    createdAt: string;
+    user: { id: string; name: string; email: string } | null;
+  }>;
+}
+
+export interface AdminPromoCodeStatsResponse {
+  promoCode: AdminPromoCodeDetail;
+  stats: {
+    totalUsages: number;
+    totalDiscountCents: number;
+    uniqueClients: number;
+  };
+  timeline: Array<{ date: string; usages: number; discountCents: number }>;
+  services: Array<{ service: string; usages: number }>;
+}
+
+export interface AdminQualityReviewListItem {
+  id: string;
+  score: number;
+  comment: string | null;
+  status: ReviewStatus;
+  ecoCompliance: boolean;
+  createdAt: string;
+  booking: {
+    id: string;
+    service: string;
+    city: string | null;
+    postalCode: string | null;
+    startAt: string;
+    status: BookingStatus;
+  };
+  author: { id: string; name: string; email: string };
+  provider: { id: string; name: string; email: string; city: string | null };
+}
+
+export interface AdminQualityReviewDetail extends AdminQualityReviewListItem {
+  moderationNotes: string | null;
+  moderatedAt: string | null;
+}
+
+export interface AdminQualityOverviewResponse {
+  stats: {
+    globalAverage: number | null;
+    reviewCount: number;
+    reviewCountLast7: number;
+    reviewCountLast30: number;
+    openIncidents: number;
+  };
+  serviceBreakdown: Array<{ service: string; average: number | null; count: number }>;
+  cityBreakdown: Array<{ city: string; average: number | null; count: number }>;
+  topProviders: Array<{
+    id: string;
+    name: string;
+    email: string;
+    city: string | null;
+    ratingAverage: number | null;
+    ratingCount: number;
+  }>;
+  atRiskProviders: Array<{
+    id: string;
+    name: string;
+    email: string;
+    city: string | null;
+    ratingAverage: number | null;
+    ratingCount: number;
+  }>;
+  recentReviews: AdminQualityReviewListItem[];
+}
+
+export interface AdminQualityProviderListItem {
+  id: string;
+  name: string;
+  email: string;
+  city: string | null;
+  serviceCategories: ServiceCategory[];
+  ratingAverage: number | null;
+  ratingCount: number;
+  totalReviews: number;
+  reviewsLast30Days: number;
+  bookingsLast30Days: number;
+  incidentsOpen: number;
+}
+
+export interface AdminQualityIncidentItem {
+  id: string;
+  booking: {
+    id: string;
+    service: string;
+    city: string | null;
+    startAt: string;
+  };
+  status: 'open' | 'under_review' | 'action_required' | 'refunded' | 'resolved' | 'rejected';
+  severity: 'low' | 'medium' | 'high';
+  reason: string;
+  createdAt: string;
+  updatedAt: string;
+  client: { id: string; name: string; email: string } | null;
+  provider: { id: string; name: string; email: string } | null;
+  refundAmountCents: number | null;
+  currency: string;
+  resolution: string | null;
+  adminNotes: string | null;
+}
+
+export interface AdminQualityAlert {
+  id: string;
+  type: 'provider_low_score' | 'critical_review' | 'client_risk';
+  title: string;
+  description: string;
+  createdAt: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AdminQualityAlertsResponse {
+  alerts: AdminQualityAlert[];
+  thresholds: {
+    providerLowScore: number;
+    providerMinReviews: number;
+    criticalReviewScore: number;
+    clientDisputeThreshold: number;
+  };
+}
+
+export interface AdminQualitySatisfactionPoint {
+  period: string;
+  averageScore: number | null;
+  reviewCount: number;
+}
+
+export interface AdminQualitySatisfactionResponse {
+  stats: {
+    averageScore: number | null;
+    totalReviews: number;
+    promoterRate: number;
+    detractorRate: number;
+    nps: number | null;
+  };
+  timeseries: AdminQualitySatisfactionPoint[];
+  serviceBreakdown: Array<{ service: string; averageScore: number | null; reviewCount: number }>;
+  cityBreakdown: Array<{ city: string; averageScore: number | null; reviewCount: number }>;
+  recentReviews: AdminQualityReviewListItem[];
+}
+
+export interface AdminQualityProgramProviderItem extends AdminQualityProviderListItem {
+  trend: 'up' | 'flat' | 'down';
+  flags: string[];
+  lastReviewAt: string | null;
+}
+
+export interface AdminQualityProgramResponse {
+  summary: {
+    totalProviders: number;
+    atRiskCount: number;
+    topCount: number;
+    incidentsLast30Days: number;
+  };
+  atRiskProviders: AdminQualityProgramProviderItem[];
+  topProviders: AdminQualityProgramProviderItem[];
+}
+
+export interface AdminQualityProviderDetail {
+  profile: AdminQualityProgramProviderItem;
+  stats: {
+    averageScore: number | null;
+    totalReviews: number;
+    reviewsLast90Days: number;
+    incidentsOpen: number;
+    incidentsLast90Days: number;
+  };
+  recentReviews: AdminQualityReviewListItem[];
+  recentIncidents: AdminQualityIncidentItem[];
+}
+
+export interface AdminServiceCatalogItem {
+  id: ServiceCategory;
+  title: string;
+  description: string;
+  includedOptions: string[];
+  providerCount: number;
+  activeProviderCount: number;
+  avgHourlyRateCents: number | null;
+  minHourlyRateCents: number | null;
+  maxHourlyRateCents: number | null;
+  bookingsCount: number;
+  lastBookingAt: string | null;
+  active: boolean;
+}
+
+export interface AdminServiceCatalogResponse {
+  summary: {
+    totalServices: number;
+    servicesWithProviders: number;
+    totalProviders: number;
+    totalBookings: number;
+    averageHourlyRateCents: number | null;
+  };
+  services: AdminServiceCatalogItem[];
+}
+
+export interface AdminServiceOptionItem {
+  id: string;
+  serviceId: ServiceCategory;
+  label: string;
+  description?: string | null;
+  priceImpactType: 'included' | 'surcharge' | 'discount';
+  active: boolean;
+}
+
+export interface AdminServiceOptionsResponse {
+  summary: {
+    totalOptions: number;
+    servicesCovered: number;
+  };
+  options: AdminServiceOptionItem[];
+}
+
+export interface AdminServicePricingMatrixRow {
+  serviceId: ServiceCategory;
+  serviceName: string;
+  providerCount: number;
+  activeProviderCount: number;
+  avgHourlyRateCents: number | null;
+  minHourlyRateCents: number | null;
+  maxHourlyRateCents: number | null;
+  avgDurationHours: number | null;
+  bookingsCount: number;
+  lastUpdatedAt: string | null;
+}
+
+export interface AdminServicePricingMatrixResponse {
+  rows: AdminServicePricingMatrixRow[];
+}
+
+export interface AdminServicePricingRuleItem {
+  id: string;
+  code: string;
+  type: string;
+  audience: string;
+  description?: string | null;
+  amountCents?: number | null;
+  percentageBps?: number | null;
+  multiplier?: number | null;
+  minSquareMeters?: number | null;
+  maxSquareMeters?: number | null;
+  isActive: boolean;
+  priority: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminServicePricingRulesResponse {
+  rules: AdminServicePricingRuleItem[];
+}
+
+export interface AdminServiceHabilitationRecord {
+  providerId: string;
+  providerName: string;
+  providerEmail: string;
+  serviceId: ServiceCategory;
+  serviceName: string;
+  onboardingStatus: string | null;
+  identityStatus: string | null;
+  payoutStatus: string | null;
+  payoutReady: boolean;
+  ratingAverage: number | null;
+  ratingCount: number | null;
+  missionsCompleted: number;
+  lastMissionAt: string | null;
+  documents: DocumentReference[];
+}
+
+export interface AdminServiceHabilitationsResponse {
+  summary: {
+    totalProviders: number;
+    verifiedProviders: number;
+    payoutReadyProviders: number;
+    servicesCovered: number;
+  };
+  items: AdminServiceHabilitationRecord[];
+}
+
+export type AdminServiceLogCategory = 'pricing' | 'service' | 'document';
+
+export interface AdminServiceLogItem {
+  id: string;
+  timestamp: string;
+  category: AdminServiceLogCategory;
+  actor: string;
+  message: string;
+}
+
+export interface AdminServiceLogsResponse {
+  logs: AdminServiceLogItem[];
+}
+
+export interface AdminServicePreviewParams {
+  service: ServiceCategory;
+  postalCode: string;
+  hours: number;
+  ecoPreference?: EcoPreference;
+}
+
+export interface AdminServicePreviewResponse {
+  service: ServiceCategory;
+  postalCode: string;
+  hours: number;
+  ecoPreference: EcoPreference;
+  estimate: PriceEstimate;
+}
+
+export interface AdminPostalZoneRecord {
+  postalCode: string;
+  city: string;
+  area?: string | null;
+  state?: string | null;
+  countryCode?: string | null;
+  active: boolean;
+  notes?: string | null;
+}
+
+export interface AdminPostalZonesResponse {
+  summary: {
+    totalZones: number;
+    filteredZones: number;
+  };
+  items: AdminPostalZoneRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export type ZoneCoverageStatus = 'none' | 'low' | 'balanced' | 'surplus';
+
+export interface AdminZoneCoverageRecord {
+  postalCode: string;
+  city: string;
+  providerCount: number;
+  bookingsLast30Days: number;
+  ratio: number;
+  status: ZoneCoverageStatus;
+}
+
+export interface AdminZoneCoverageResponse {
+  generatedAt: string;
+  items: AdminZoneCoverageRecord[];
+}
+
+export interface AdminProviderServiceAreaZone {
+  id: string;
+  name: string;
+  postalCode?: string | null;
+  city?: string | null;
+  district?: string | null;
+}
+
+export interface AdminProviderServiceAreaRecord {
+  providerId: string;
+  providerName: string;
+  providerEmail: string;
+  basePostalCode?: string | null;
+  baseCity?: string | null;
+  serviceAreas: string[];
+  serviceCategories: ServiceCategory[];
+  serviceZones: AdminProviderServiceAreaZone[];
+  updatedAt: string;
+}
+
+export interface AdminProviderServiceAreasResponse {
+  items: AdminProviderServiceAreaRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface AdminZoneMatchingRulesResponse {
+  defaults: {
+    distanceMaxKm: number;
+    weights: Record<string, number>;
+    teamBonus: {
+      two?: number;
+      threePlus?: number;
+    };
+  };
+  overrides: Array<{
+    postalCode: string;
+    city?: string | null;
+    notes?: string | null;
+    distanceMaxKm?: number | null;
+  }>;
+}
+
+export interface AdminMatchingCandidate {
+  providerId: string;
+  providerName: string;
+  providerEmail: string;
+  score: number;
+  rank: number;
+  components: Record<string, number>;
+  metadata: {
+    distanceKm: number;
+    priceEstimateCents: number | null;
+    ratingAverage: number | null;
+    ratingCount: number | null;
+    providerType: ProviderType;
+    reliabilityRecent: number;
+  };
+  serviceAreas: string[];
+  serviceZones: AdminProviderServiceAreaZone[];
+}
+
+export interface AdminMatchingTestResponse {
+  query: {
+    postalCode: string;
+    city?: string | null;
+    service: ServiceCategory;
+    startAt: string;
+    endAt: string;
+    ecoPreference: EcoPreference;
+    requiredProviders: number;
+  };
+  candidates: AdminMatchingCandidate[];
+  summary: {
+    totalCandidates: number;
+    distanceMaxKm: number;
+  };
+}
+
+export interface AdminSmartMatchingStats {
+  period: {
+    from: string;
+    to: string;
+  };
+  totalMatches: number;
+  successfulMatches: number;
+  pendingMatches: number;
+  successRate: number;
+  avgProvidersContacted: number;
+  avgFirstResponseMinutes: number | null;
+  avgAssignmentMinutes: number | null;
+}
+
+export interface AdminSmartMatchingOverviewResponse {
+  generatedAt: string;
+  stats: AdminSmartMatchingStats;
+  charts: {
+    matchesByDay: Array<{ date: string; total: number; successful: number }>;
+    responsesByStatus: Array<{ status: BookingInvitationStatus | 'pending'; value: number }>;
+  };
+  notes?: string[];
+}
+
+export interface AdminSmartMatchingScenario {
+  id: string;
+  name: string;
+  description?: string;
+  conditions: string;
+  stats: {
+    bookings: number;
+    successRate: number;
+    avgInvitations: number | null;
+    avgLeadHours: number | null;
+  };
+  highlights: string[];
+}
+
+export interface AdminSmartMatchingScenarioResponse {
+  period: {
+    from: string;
+    to: string;
+  };
+  scenarios: AdminSmartMatchingScenario[];
+}
+
+export interface AdminSmartMatchingInvitationSummary {
+  total: number;
+  accepted: number;
+  declined: number;
+  expired: number;
+  pending: number;
+}
+
+export interface AdminSmartMatchingHistoryItem {
+  bookingId: string;
+  createdAt: string;
+  startAt: string;
+  service: ServiceCategory;
+  city: string;
+  postalCode: string;
+  status: BookingStatus;
+  result: 'assigned' | 'unassigned';
+  provider?: AdminBookingParty | null;
+  invitations: AdminSmartMatchingInvitationSummary;
+  requestedProviders: number;
+  shortNotice: boolean;
+  client: AdminBookingParty | null;
+  lastInvitationAt?: string | null;
+}
+
+export type AdminSmartMatchingTimelineEventType =
+  | 'invited'
+  | 'viewed'
+  | 'accepted'
+  | 'declined'
+  | 'expired'
+  | 'assigned';
+
+export interface AdminSmartMatchingTimelineEvent {
+  type: AdminSmartMatchingTimelineEventType;
+  timestamp: string;
+  provider?: AdminBookingParty;
+  notes?: string;
+}
+
+export interface AdminSmartMatchingInvitationDetail {
+  id: string;
+  status: BookingInvitationStatus;
+  invitedAt: string;
+  viewedAt?: string | null;
+  respondedAt?: string | null;
+  provider: AdminBookingParty;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface AdminSmartMatchingDetail {
+  booking: AdminBookingListItem;
+  summary: {
+    invitations: AdminSmartMatchingInvitationSummary;
+    assignedProvider?: AdminBookingParty | null;
+    firstInvitationAt?: string | null;
+    firstResponseAt?: string | null;
+    assignmentAt?: string | null;
+  };
+  invitations: AdminSmartMatchingInvitationDetail[];
+  timeline: AdminSmartMatchingTimelineEvent[];
+}
+
+export interface AdminSmartMatchingConfig {
+  distanceMaxKm: number;
+  weights: Record<string, number>;
+  teamBonus: {
+    two?: number;
+    threePlus?: number;
+  };
+}
+
+export interface AdminSmartMatchingPolicy {
+  id: string;
+  name: string;
+  description?: string;
+  type: 'priority' | 'limit' | 'monitoring';
+  scope: string;
+  enabled: boolean;
+  stats: {
+    impactedBookings: number;
+    complianceRate?: number | null;
+    breaches?: number;
+  };
+  highlights: string[];
+}
+
+export interface AdminSmartMatchingPolicyResponse {
+  period: {
+    from: string;
+    to: string;
+  };
+  policies: AdminSmartMatchingPolicy[];
+}
+
+export interface AdminSmartMatchingGuardrailCase {
+  id: string;
+  reference: string;
+  count: number;
+  lastEventAt: string;
+  extra?: string | null;
+}
+
+export interface AdminSmartMatchingGuardrail {
+  id: string;
+  name: string;
+  target: 'provider' | 'client';
+  description: string;
+  threshold: string;
+  activeCases: number;
+  criticalCases?: number;
+  examples: AdminSmartMatchingGuardrailCase[];
+}
+
+export interface AdminSmartMatchingGuardrailResponse {
+  period: {
+    from: string;
+    to: string;
+  };
+  guardrails: AdminSmartMatchingGuardrail[];
+}
+
+export interface AdminSmartMatchingSimulationResponse {
+  query: {
+    postalCode: string;
+    city?: string | null;
+    service: ServiceCategory;
+    startAt: string;
+    endAt: string;
+    ecoPreference: EcoPreference;
+    requiredProviders: number;
+  };
+  candidates: AdminMatchingCandidate[];
+  summary: {
+    totalCandidates: number;
+    generatedAt: string;
+  };
+}
+
 export interface AdminSupportItem {
   id: string;
   subject: string;
@@ -715,6 +1935,172 @@ export interface AdminTicket {
   createdAt: string;
   updatedAt: string;
   tags: string[];
+}
+
+export interface AdminSupportUserRef {
+  id: string;
+  name: string;
+  email: string;
+  type: 'client' | 'provider' | 'company' | 'employee';
+}
+
+export interface AdminSupportBookingRef {
+  id: string;
+  status: BookingStatus;
+  service: string;
+  startAt: string;
+  city?: string | null;
+  postalCode?: string | null;
+  totalCents?: number | null;
+  currency?: string | null;
+  clientName?: string | null;
+  providerName?: string | null;
+}
+
+export interface AdminSupportTicketListItem {
+  id: string;
+  subject: string;
+  description: string;
+  status: 'open' | 'in_progress' | 'waiting_customer' | 'resolved' | 'closed';
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  category: 'onboarding' | 'billing' | 'incident' | 'feature_request' | 'other';
+  requester: AdminSupportUserRef;
+  assignee?: AdminSupportUserRef;
+  booking?: AdminSupportBookingRef;
+  channel: 'app' | 'email' | 'phone' | 'chat';
+  updatedAt: string;
+  createdAt: string;
+  dueAt?: string | null;
+  messageCount: number;
+}
+
+export interface AdminSupportTicketListResponse extends AdminPaginatedResponse<AdminSupportTicketListItem> {}
+
+export interface AdminSupportMessageAttachment {
+  id: string;
+  url: string;
+  filename: string;
+}
+
+export interface AdminSupportMessage {
+  id: string;
+  createdAt: string;
+  content: string;
+  internal: boolean;
+  author?: AdminSupportUserRef;
+  attachments?: AdminSupportMessageAttachment[];
+}
+
+export interface AdminSupportTicketDetail {
+  ticket: AdminSupportTicketListItem;
+  messages: AdminSupportMessage[];
+}
+
+export interface AdminSupportDisputeListItem {
+  id: string;
+  status: 'open' | 'under_review' | 'action_required' | 'refunded' | 'resolved' | 'rejected';
+  reason: string;
+  openedAt: string;
+  updatedAt: string;
+  booking?: AdminSupportBookingRef;
+  paymentAmountCents?: number | null;
+  paymentCurrency?: string | null;
+  refundAmountCents?: number | null;
+  refundCurrency?: string | null;
+  resolution?: string | null;
+}
+
+export interface AdminSupportDisputeListResponse extends AdminPaginatedResponse<AdminSupportDisputeListItem> {}
+
+export interface AdminSupportDisputeDetail extends AdminSupportDisputeListItem {
+  description?: string | null;
+  adminNotes?: string | null;
+  assignedTo?: AdminSupportUserRef;
+  messages: Array<{
+    id: string;
+    createdAt: string;
+    role: 'client' | 'provider' | 'admin';
+    message: string;
+    author?: AdminSupportUserRef;
+  }>;
+}
+
+export interface AdminSupportOverviewResponse {
+  metrics: {
+    openTickets: number;
+    urgentTickets: number;
+    activeDisputes: number;
+    resolution24hRate: number;
+  };
+  timeline: Array<{ date: string; tickets: number; disputes: number }>;
+  disputeReasons: Array<{ reason: string; value: number }>;
+  recentTickets: Array<{
+    id: string;
+    subject: string;
+    priority: AdminSupportTicketListItem['priority'];
+    status: AdminSupportTicketListItem['status'];
+    requester: string;
+    assignee?: string;
+    updatedAt: string;
+  }>;
+}
+
+export interface AdminSupportSlaResponse {
+  averageFirstResponseMinutes: number | null;
+  averageResolutionHours: number | null;
+  resolution24hRate: number | null;
+  satisfactionScore: number | null;
+  feedbackSampleSize: number;
+  responseTrend: Array<{ label: string; value: number }>;
+  volumeByDay: Array<{ label: string; value: number }>;
+}
+
+export interface AdminSupportRangeQuery {
+  from?: string;
+  to?: string;
+}
+
+export interface AdminSupportTicketsQuery extends AdminSupportRangeQuery {
+  status?: AdminSupportTicketListItem['status'];
+  priority?: AdminSupportTicketListItem['priority'];
+  category?: AdminSupportTicketListItem['category'];
+  type?: 'client' | 'provider' | 'company' | 'employee';
+  search?: string;
+  bookingId?: string;
+  requesterId?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface AdminSupportDisputesQuery extends AdminSupportRangeQuery {
+  status?: AdminSupportDisputeListItem['status'];
+  bookingId?: string;
+  clientId?: string;
+  providerId?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface AdminSupportTicketUpdatePayload {
+  status?: AdminSupportTicketListItem['status'];
+  priority?: AdminSupportTicketListItem['priority'];
+  assigneeId?: string | null;
+  dueAt?: string | null;
+}
+
+export interface AdminSupportTicketMessagePayload {
+  content: string;
+  internal?: boolean;
+}
+
+export interface AdminSupportDisputeUpdatePayload {
+  status?: AdminSupportDisputeListItem['status'];
+  resolution?: string | null;
+  refundAmountCents?: number | null;
+  refundCurrency?: string | null;
+  assignedToId?: string | null;
+  adminNotes?: string | null;
 }
 
 export interface OpsFallbackQueueItem {
@@ -807,6 +2193,74 @@ export interface AdminDashboardMetrics {
   revenue: number;
 }
 
+export interface AdminDashboardUserOverview {
+  total: number;
+  providers: {
+    total: number;
+    active: number;
+    inactive: number;
+  };
+  clients: number;
+  employees: number;
+  admins: number;
+}
+
+export interface AdminDashboardBookingsOverview {
+  total: number;
+  today: number;
+  thisWeek: number;
+  thisMonth: number;
+  statuses: {
+    draft: number;
+    pending: number;
+    confirmed: number;
+    cancelled: number;
+    completed: number;
+  };
+  shortNotice: {
+    total: number;
+    percentage: number;
+  };
+  cancellationRate: number;
+  conversionRate: number;
+}
+
+export interface AdminDashboardFinancesOverview {
+  revenue: {
+    today: number;
+    week: number;
+    month: number;
+  };
+  payments: {
+    succeeded: number;
+    pending: number;
+    failed: number;
+    refunded: number;
+  };
+  averageBasket: number;
+}
+
+export interface AdminDashboardChartPoint {
+  date: string;
+  value: number;
+  label?: string;
+}
+
+export interface AdminDashboardOverview {
+  users: AdminDashboardUserOverview;
+  bookings: AdminDashboardBookingsOverview;
+  finances: AdminDashboardFinancesOverview;
+  charts: {
+    bookingsPerDay: AdminDashboardChartPoint[];
+    revenuePerWeek: AdminDashboardChartPoint[];
+  };
+  operations: {
+    occupancyRate: number;
+    busyProviders: number;
+    shortNoticeRatio: number;
+  };
+}
+
 export type AdminDashboardAlertTone = 'neutral' | 'accent' | 'positive';
 
 export interface AdminDashboardAlert {
@@ -844,6 +2298,7 @@ export interface AdminDashboardResponse {
   performance: AdminDashboardPerformance;
   topProviders: AdminDashboardTopProvider[];
   escalations: AdminDashboardEscalation[];
+  overview?: AdminDashboardOverview;
 }
 
 export interface CreateDisputePayload {

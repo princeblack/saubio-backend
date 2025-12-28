@@ -129,6 +129,7 @@ enum DocumentType {
   PHOTO_BEFORE
   PHOTO_AFTER
   INVOICE
+  PROFILE_PHOTO
   OTHER
 }
 
@@ -157,6 +158,12 @@ enum AdminReviewStatus {
   PENDING
   APPROVED
   REJECTED
+}
+
+enum ReviewStatus {
+  PUBLISHED
+  HIDDEN
+  FLAGGED
 }
 
 enum DisputeStatus {
@@ -191,6 +198,19 @@ enum LoyaltyTransactionType {
   REDEEM
   ADJUST
 }
+
+enum PromoCodeType {
+  FIXED
+  PERCENT
+}
+
+enum MarketingLandingStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+/// --- MODELS ---
 
 /// --- MODELS ---
 
@@ -232,6 +252,11 @@ model User {
   disputesOpened          Dispute[]               @relation("DisputeOpenedBy")
   disputesAssigned        Dispute[]               @relation("DisputeAssigned")
   disputeMessages         DisputeMessage[]        @relation("UserDisputeMessages")
+  promoCodesCreated       PromoCode[]             @relation("PromoCodeCreator")
+  promoCodeUsages         PromoCodeUsage[]        @relation("PromoCodeUsageClient")
+  reviewsModerated        Review[]                @relation("ReviewModeratedBy")
+  marketingSettingsUpdated MarketingSetting[]     @relation("MarketingSettingUpdatedBy")
+  marketingSettingLogs    MarketingSettingLog[]
 }
 
 model ProviderProfile {
@@ -257,6 +282,13 @@ model ProviderProfile {
   payoutLast4       String?
   payoutReady       Boolean      @default(false)
   kycStatus         String?      @default("pending")
+  payoutActivationStatus String  @default("pending")
+  payoutAccountHolder String?
+  payoutIbanMasked  String?
+  payoutIbanCountry String?
+  payoutBankName    String?
+  payoutMollieCustomerId String?
+  payoutMollieMandateId  String?
   acceptsAnimals    Boolean      @default(false)
   gender            String?
   birthDate         DateTime?
@@ -439,6 +471,8 @@ model SupportTicket {
   category    SupportCategory     @default(OTHER)
   subject     String
   description String
+  booking     Booking?            @relation(fields: [bookingId], references: [id])
+  bookingId   String?
   requester   User                @relation("TicketRequester", fields: [requesterId], references: [id])
   requesterId String
   assignee    User?               @relation("TicketAssignee", fields: [assigneeId], references: [id])
@@ -616,6 +650,8 @@ model Booking {
   mode                 BookingMode
   ecoPreference        EcoPreference
   couponCode           String?
+  promoCode            PromoCode?        @relation(fields: [promoCodeId], references: [id])
+  promoCodeId          String?
   contactFirstName     String?
   contactLastName      String?
   contactCompany       String?
@@ -675,6 +711,7 @@ model Booking {
   bookingLocks BookingTeamLock[]
   disputes    Dispute[]
   invitations BookingInvitation[]
+  promoCodeUsages PromoCodeUsage[]
   shortNotice Boolean          @default(false)
   leadTimeDays Int?
   shortNoticeDepositCents Int?
@@ -684,6 +721,7 @@ model Booking {
   cleaningPreferences Json?
   upholsteryDetails   Json?
   additionalInstructions String?
+  supportTickets SupportTicket[]
 }
 
 enum BookingInvitationStatus {
@@ -703,6 +741,7 @@ model BookingInvitation {
   providerId  String
   status      BookingInvitationStatus  @default(PENDING)
   respondedAt DateTime?
+  viewedAt    DateTime?
   metadata    Json?
 
   @@unique([bookingId, providerId])
@@ -828,6 +867,53 @@ model PaymentEvent {
   payload   Json
 
   @@index([paymentId])
+}
+
+model PromoCode {
+  id                    String         @id @default(cuid())
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  code                  String         @unique
+  type                  PromoCodeType
+  fixedAmountCents      Int?
+  percentage            Int?
+  description           String?
+  startsAt              DateTime?
+  endsAt                DateTime?
+  maxTotalUsages        Int?
+  maxUsagesPerUser      Int?
+  minBookingTotalCents  Int?
+  applicableServices    String[]       @default([])
+  applicablePostalCodes String[]       @default([])
+  isActive              Boolean        @default(true)
+  createdBy             User?          @relation("PromoCodeCreator", fields: [createdById], references: [id])
+  createdById           String?
+  usageCount            Int            @default(0)
+  lastUsedAt            DateTime?
+  metadata              Json?
+
+  usages                PromoCodeUsage[]
+  bookings              Booking[]
+}
+
+model PromoCodeUsage {
+  id                   String    @id @default(cuid())
+  createdAt            DateTime  @default(now())
+  promoCode            PromoCode @relation(fields: [promoCodeId], references: [id])
+  promoCodeId          String
+  booking              Booking?  @relation(fields: [bookingId], references: [id])
+  bookingId            String?
+  client               User?     @relation("PromoCodeUsageClient", fields: [clientId], references: [id])
+  clientId             String?
+  amountDiscountCents  Int
+  currency             String    @default("EUR")
+  status               String?
+  metadata             Json?
+
+  @@index([promoCodeId])
+  @@index([bookingId])
+  @@index([clientId])
+  @@unique([promoCodeId, bookingId])
 }
 
 model Dispute {
@@ -973,6 +1059,11 @@ model Review {
   score            Int
   comment          String?
   ecoCompliance    Boolean
+  status           ReviewStatus    @default(PUBLISHED)
+  moderationNotes  String?
+  moderatedBy      User?           @relation("ReviewModeratedBy", fields: [moderatedById], references: [id])
+  moderatedById    String?
+  moderatedAt      DateTime?
 }
 
 model RefreshToken {
@@ -1136,4 +1227,64 @@ model MatchingConfig {
   weightsJson   Json?
   distanceMaxKm Float    @default(20)
   teamBonusJson Json?
+}
+
+model PostalFollowUpRequest {
+  id                   String   @id @default(cuid())
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  email                String
+  postalCode           String
+  normalizedPostalCode String
+  normalizedCity       String?
+  marketingConsent     Boolean  @default(false)
+
+  @@index([normalizedPostalCode])
+  @@index([email])
+  @@unique([email, normalizedPostalCode])
+}
+
+model MarketingLandingPage {
+  id              String                 @id @default(cuid())
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  title           String
+  slug            String                 @unique
+  path            String                 @unique
+  status          MarketingLandingStatus @default(DRAFT)
+  impressions     Int                    @default(0)
+  conversions     Int                    @default(0)
+  leads           Int                    @default(0)
+  bounceRate      Float?
+  seoTitle        String?
+  seoDescription  String?
+  heroTitle       String?
+  heroDescription String?
+}
+
+model MarketingSetting {
+  id                           Int       @id @default(1)
+  createdAt                    DateTime  @default(now())
+  updatedAt                    DateTime  @updatedAt
+  promoCodesEnabled            Boolean   @default(true)
+  referralEnabled              Boolean   @default(false)
+  marketingNotificationsEnabled Boolean  @default(true)
+  maxPromoCodesPerClient       Int       @default(3)
+  stackingRules                String?   @db.Text
+  restrictedZones              String?   @db.Text
+  updatedById                  String?
+  updatedBy                    User?     @relation("MarketingSettingUpdatedBy", fields: [updatedById], references: [id])
+  logs                         MarketingSettingLog[]
+}
+
+model MarketingSettingLog {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  label       String
+  previousValue String?
+  newValue    String?
+  setting     MarketingSetting @relation(fields: [settingId], references: [id])
+  settingId   Int
+  user        User?    @relation(fields: [userId], references: [id])
+  userId      String?
 }

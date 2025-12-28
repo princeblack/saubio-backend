@@ -761,47 +761,7 @@
   },
   "sidebar": {
     "client": {
-      "dashboard": "Dashboard",
-      "bookings": "Bookings",
-      "new": "New booking",
-      "notifications": "Notifications",
-      "support": "Support",
-      "profile": "Profile"
-    },
-    "provider": {
-      "dashboard": "Dashboard",
-      "missions": "Requests & jobs",
-      "profileSection": "Profile & identity",
-      "profilePublic": "Edit public profile",
-      "profileAddress": "Addresses",
-      "profileAreas": "Service areas",
-      "profileIdentity": "Identity documents",
-      "earningsSection": "Earnings & pricing",
-      "earningsOverview": "Revenue overview",
-      "earningsPricing": "Hourly rates",
-      "earningsInvoices": "Invoices & payouts",
-      "supportSection": "Help & resources",
-      "supportLibrary": "Resource center",
-      "supportChecklist": "Activation checklist",
-      "documentsShortcut": "My documents",
-      "pricingShortcut": "My rates",
-      "invoicesShortcut": "My invoices",
-      "zonesShortcut": "My service areas",
-      "availabilitySection": "Availability",
-      "availabilitySchedule": "Manage availability",
-      "availabilityTimeOff": "Schedule time off",
-      "statsSection": "Statistics",
-      "statsReliability": "Reliability & status",
-      "statsReviews": "Client reviews"
-    },
-    "admin": {
-      "dashboard": "Dashboard",
-      "users": "Users",
-      "providers": "Provider requests",
-      "bookings": "Bookings",
-      "support": "Support",
-      "operations": "Operations",
-      "tickets": "Tickets"
+      "mandates": "SEPA mandates"
     }
   },
   "clientDashboard": {
@@ -884,12 +844,14 @@
     },
     "scheduleTitle": "Upcoming schedule",
     "alertsTitle": "Quality alerts",
-    "paymentsTitle": "Payouts",
+    "paymentsTitle": "Earnings & payouts",
     "feedbackTitle": "Client feedback",
     "qualityTitle": "Operational quality",
     "payments": {
-      "total": "Payments received",
-      "pending": "Pending",
+      "total": "Total earned (excluding upcoming missions)",
+      "validation": "Awaiting validation",
+      "pending": "Payable (PMA pending)",
+      "paid": "Already paid",
       "lastPayout": "Last payout"
     },
     "quality": {
@@ -1104,24 +1066,50 @@
     }
   },
   "providerRevenue": {
-    "title": "Revenue",
-    "subtitle": "Monitor payouts and upcoming payments.",
-    "summaryTitle": "Payment summary",
-    "tableTitle": "Payment history",
-    "chartTitle": "Revenue trend",
+    "title": "Earnings",
+    "subtitle": "Always know what you’ve completed, what is owed, and what has been paid.",
+    "overviewTitle": "Overview",
+    "historyTitle": "Payout history",
+    "chartTitle": "Confirmed earnings trend",
+    "tableTitle": "Mission payout history",
+    "summary": {
+      "total": "Total earned (excluding upcoming missions)",
+      "awaitingValidation": "Awaiting validation",
+      "payable": "Payable (PMA pending)",
+      "paid": "Already paid"
+    },
     "columns": {
       "date": "Date",
-      "booking": "Mission",
-      "amount": "Amount",
+      "client": "Client",
+      "service": "Mission",
+      "gross": "Gross",
+      "commission": "Commission",
+      "net": "Net",
       "status": "Status"
     },
-    "status": {
-      "captured": "Captured",
-      "authorized": "Authorized",
-      "pending": "Pending",
-      "processing": "Processing",
+    "statuses": {
+      "upcoming": "Upcoming",
+      "awaiting_validation": "Awaiting validation",
+      "payable": "Payable",
       "paid": "Paid"
-    }
+    },
+    "statusDescriptions": {
+      "upcoming": "Mission scheduled. Amount is estimated until completion.",
+      "awaiting_validation": "Mission finished, waiting for validation.",
+      "payable": "Amount confirmed. Payout scheduled.",
+      "paid": "Funds transferred to your account."
+    },
+    "expectedPayout": "Estimated payout {{date}}",
+    "empty": {
+      "overview": "You’ll see your earnings here after your first completed mission.",
+      "table": "No paid missions yet."
+    },
+    "documentsTitle": "Statements & invoices",
+    "documentsSubtitle": "Download your payout documents once they become available.",
+    "documentsErrorTitle": "Unable to load your statements",
+    "documentsErrorDescription": "Please try again in a moment.",
+    "documentsDownload": "Download",
+    "documentsEmpty": "Your statements will be available after your first payout."
   },
   "providerResourcesPage": {
     "title": "Resources",
@@ -1184,6 +1172,41 @@
       "documentsLabel": "{{count}} document(s) sent",
       "noDocuments": "No document submitted yet",
       "cta": "Manage my documents"
+    },
+    "payout": {
+      "requiredTitle": "Activate your payouts",
+      "requiredDescription": "Add your bank details to receive payouts. Everything stays inside the app, no external login.",
+      "reviewTitle": "Verification in progress",
+      "reviewDescription": "Your bank details are being reviewed. This usually takes a few minutes.",
+      "rejectedTitle": "Payout not validated",
+      "rejectedDescription": "Some information must be corrected. Please try again with a valid IBAN.",
+      "readyTitle": "Payouts activated",
+      "readyDescription": "Your payout data is verified. Transfers are triggered automatically after each mission.",
+      "method": "Method",
+      "bank": "Bank transfer",
+      "card": "Card",
+      "last4": "Last digits",
+      "status": "Status",
+      "statusLabel": {
+        "pending": "To be completed",
+        "in_review": "Under review",
+        "verified": "Verified",
+        "rejected": "Rejected"
+      },
+      "statusHint": {
+        "pending": "Add your bank details to start the verification.",
+        "in_review": "We are checking your information. This may take a few minutes.",
+        "rejected": "Details were rejected. Please update your bank details and try again.",
+        "verified": "Your payouts are ready."
+      },
+      "cta": "Save my bank details",
+      "opening": "Activating…",
+      "error": "Unable to save your bank details right now.",
+      "accountHolder": "Account holder",
+      "iban": "IBAN",
+      "ibanError": "Invalid IBAN. Please check the format.",
+      "success": "Bank details saved. Payouts will be sent automatically.",
+      "pendingReview": "Bank details saved, validation in progress."
     }
   },
   "providerAvailabilityPage": {
@@ -1390,10 +1413,5 @@
       "empty": "No SEPA event recorded yet."
     },
     "error": "We couldn’t load your mandates or SEPA history."
-  },
-  "sidebar": {
-    "client": {
-      "mandates": "SEPA mandates"
-    }
   }
 }

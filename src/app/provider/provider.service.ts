@@ -8,11 +8,11 @@ import {
   EcoPreference as PrismaEcoPreference,
   Payment,
   PaymentDistribution,
-  PaymentStatus as PrismaPaymentStatus,
   Prisma,
   ProviderProfile as PrismaProviderProfile,
   ProviderServiceZone as PrismaProviderServiceZone,
   ProviderType as PrismaProviderType,
+  ProviderPayout as PrismaProviderPayout,
   IdentityVerificationStatus as PrismaIdentityVerificationStatus,
   User as PrismaUser,
   BookingInvitationStatus as PrismaBookingInvitationStatus,
@@ -30,11 +30,15 @@ import type {
   ProviderDirectoryDetails,
   ProviderIdentityDocumentSummary,
   ProviderAvailabilityOverview,
+  ProviderEarningsResponse,
+  ProviderEarningStatus,
+  ProviderMissionEarning,
   User,
   ProviderBookingInvitation,
   BookingInvitationStatus,
   ProviderServiceCatalogResponse,
   ServiceCategory,
+  PostalCoverageResponse,
 } from '@saubio/models';
 import { ConfigService } from '@nestjs/config';
 import type { AppEnvironmentConfig } from '../config/configuration';
@@ -56,6 +60,7 @@ import { randomInt } from 'crypto';
 import { SignupFeeRequestDto } from './dto/signup-fee-request.dto';
 import { CompleteWelcomeSessionDto } from './dto/complete-welcome-session.dto';
 import { UploadIdentityDocumentDto } from './dto/upload-identity-document.dto';
+import { UploadProfilePhotoDto } from './dto/upload-profile-photo.dto';
 import { UpdateProviderAvailabilityDto } from './dto/update-provider-availability.dto';
 import { CreateProviderTimeOffDto } from './dto/create-provider-time-off.dto';
 import { EmailQueueService } from '../notifications/email-queue.service';
@@ -63,6 +68,12 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { UpdateProviderServicesDto } from './dto/update-provider-services.dto';
 import { SERVICE_TYPE_CATALOG } from './service-type-catalog';
 import { PostalCodeService } from '../geocoding/postal-code.service';
+import { ProviderInvitationFiltersDto } from './dto/provider-invitation-filters.dto';
+import {
+  PLATFORM_COMMISSION_RATE,
+  PLATFORM_COMMISSION_VAT_RATE,
+  NET_PROVIDER_SHARE_FACTOR,
+} from '../payments/payment.constants';
 
 const SHORT_NOTICE_PLATFORM_FEE_CENTS = 300;
 const BOOKING_CLIENT_SELECT = {
@@ -70,6 +81,23 @@ const BOOKING_CLIENT_SELECT = {
   firstName: true,
   lastName: true,
   email: true,
+} as const;
+
+const EARNING_BOOKING_SELECT = {
+  id: true,
+  service: true,
+  startAt: true,
+  endAt: true,
+  durationHours: true,
+  addressCity: true,
+  addressPostalCode: true,
+  client: {
+    select: {
+      firstName: true,
+      lastName: true,
+    },
+  },
+  pricingSubtotalCents: true,
 } as const;
 
 type PrismaPaymentWithProvider = Payment & {
@@ -86,11 +114,18 @@ type PrismaPaymentWithProvider = Payment & {
   cancellationReason?: string | null;
 };
 
+type BookingEarningSnapshot = Prisma.BookingGetPayload<{ select: typeof EARNING_BOOKING_SELECT }>;
+
 type PrismaPaymentDistributionWithMeta = PaymentDistribution & {
   currency?: string | null;
   externalReference?: string | null;
   availableOn?: Date | null;
   releasedAt?: Date | null;
+};
+
+type PaymentDistributionWithBooking = PrismaPaymentDistributionWithMeta & {
+  payment: (PrismaPaymentWithProvider & { booking: BookingEarningSnapshot | null }) | null;
+  providerPayout: PrismaProviderPayout | null;
 };
 
 type OnboardingTaskStatus = 'pending' | 'in_progress' | 'completed';
@@ -136,7 +171,14 @@ type BookingInvitationWithBooking = Prisma.BookingInvitationGetPayload<{
       };
     };
   };
-}>;
+}> & {
+  viewedAt?: Date | null;
+};
+
+type BookingInvitationViewedAtUpdate =
+  Prisma.BookingInvitationUncheckedUpdateInput & {
+    viewedAt?: Date | string | null;
+  };
 
 @Injectable()
 export class ProviderService {
@@ -244,9 +286,9 @@ export class ProviderService {
       include: {
         user: { select: { firstName: true, lastName: true } },
         documents: {
-          where: { type: DocumentType.PHOTO_BEFORE },
+          where: { type: { in: [DocumentType.PROFILE_PHOTO, DocumentType.PHOTO_BEFORE] } },
           orderBy: { createdAt: 'desc' },
-          take: 1,
+          take: 3,
         },
         serviceZones: { select: { postalCode: true } },
       },
@@ -362,7 +404,7 @@ export class ProviderService {
           acceptsAnimals: provider.acceptsAnimals ?? false,
           yearsExperience: provider.yearsExperience ?? undefined,
           bio: provider.bio ?? undefined,
-          photoUrl: provider.documents[0]?.url,
+          photoUrl: this.resolveProfilePhotoUrl(provider.documents),
           gender: provider.gender ?? null,
         };
       });
@@ -392,8 +434,86 @@ export class ProviderService {
     return Array.from(unique).sort((a, b) => a.localeCompare(b, 'de-DE', { sensitivity: 'base' }));
   }
 
+  async checkPostalCoverage(postalCode: string): Promise<PostalCoverageResponse> {
+    const normalizedPostal = this.postalCodes.normalizePostalCode(postalCode);
+    if (!normalizedPostal) {
+      return {
+        postalCode: postalCode ?? '',
+        covered: false,
+        providerCount: 0,
+        reason: 'invalid_postal',
+      };
+    }
+    const lookup = this.postalCodes.lookup(normalizedPostal);
+    if (!lookup) {
+      return {
+        postalCode: normalizedPostal,
+        covered: false,
+        providerCount: 0,
+        reason: 'postal_not_found',
+      };
+    }
+
+    const cityVariants = this.postalCodes.cityVariants(lookup.city);
+    const cityConditions = cityVariants.map<Prisma.ProviderProfileWhereInput>((variant) => ({
+      serviceAreas: { has: variant },
+    }));
+
+    const locationConditions: Prisma.ProviderProfileWhereInput[] = [
+      { user: { isActive: true } },
+      {
+        OR: [
+          {
+            serviceZones: {
+              some: {
+                OR: [
+                  { postalCode: { equals: normalizedPostal, mode: 'insensitive' } },
+                  { postalCode: { startsWith: normalizedPostal.slice(0, 4), mode: 'insensitive' } },
+                ],
+              },
+            },
+          },
+          ...cityConditions,
+        ],
+      },
+    ];
+
+    const candidates = await this.prisma.providerProfile.findMany({
+      where: { AND: locationConditions },
+      select: {
+        id: true,
+        serviceAreas: true,
+        serviceZones: { select: { postalCode: true } },
+      },
+      take: 200,
+    });
+
+    const normalizedCitySet = new Set<string>();
+    if (lookup.normalizedCity) {
+      normalizedCitySet.add(lookup.normalizedCity);
+    }
+    cityVariants
+      .map((variant) => this.postalCodes.normalizeCityName(variant))
+      .filter((value): value is string => Boolean(value))
+      .forEach((value) => normalizedCitySet.add(value));
+
+    const matched = candidates.filter((provider) =>
+      this.providerMatchesRequestedLocation(provider, normalizedPostal, normalizedCitySet)
+    );
+
+    return {
+      postalCode: normalizedPostal,
+      city: lookup.city,
+      area: lookup.area ?? null,
+      state: lookup.state ?? null,
+      covered: matched.length > 0,
+      providerCount: matched.length,
+      reason: matched.length > 0 ? undefined : 'uncovered',
+    };
+  }
+
   private providerMatchesRequestedLocation(
-    provider: PrismaProviderProfile & { serviceZones: Pick<PrismaProviderServiceZone, 'postalCode'>[] },
+    provider: { serviceAreas: string[]; serviceZones: Pick<PrismaProviderServiceZone, 'postalCode'>[] },
     postalPrefix: string | null,
     normalizedCitySet: Set<string> | null
   ): boolean {
@@ -427,9 +547,9 @@ export class ProviderService {
       include: {
         user: { select: { firstName: true, lastName: true } },
         documents: {
-          where: { type: DocumentType.PHOTO_BEFORE },
+          where: { type: { in: [DocumentType.PROFILE_PHOTO, DocumentType.PHOTO_BEFORE] } },
           orderBy: { createdAt: 'desc' },
-          take: 1,
+          take: 3,
         },
         reviews: {
           orderBy: { createdAt: 'desc' },
@@ -467,21 +587,28 @@ export class ProviderService {
       acceptsAnimals: provider.acceptsAnimals ?? false,
       yearsExperience: provider.yearsExperience ?? undefined,
       bio: provider.bio ?? undefined,
-      photoUrl: provider.documents[0]?.url,
+      photoUrl: this.resolveProfilePhotoUrl(provider.documents),
       gender: provider.gender ?? null,
       verified: provider.identityVerificationStatus === PrismaIdentityVerificationStatus.VERIFIED,
       reviews,
     };
   }
 
-  async listShortNoticeInvitations(user: User): Promise<ProviderBookingInvitation[]> {
+  async listShortNoticeInvitations(
+    user: User,
+    filters: ProviderInvitationFiltersDto = {}
+  ): Promise<ProviderBookingInvitation[]> {
     await this.assertOnboardingComplete(user);
     const profile = await this.requireProviderProfile(user.id);
+    const where: Prisma.BookingInvitationWhereInput = {
+      providerId: profile.id,
+    };
+    if (filters.status) {
+      where.status = this.mapInvitationStatusFilter(filters.status);
+    }
+    const limit = filters.limit ? Math.min(Math.max(filters.limit, 1), 200) : undefined;
     const invitations = await this.prisma.bookingInvitation.findMany({
-      where: {
-        providerId: profile.id,
-        status: PrismaBookingInvitationStatus.PENDING,
-      },
+      where,
       include: {
         booking: {
           include: {
@@ -493,7 +620,8 @@ export class ProviderService {
           },
         },
       },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
     });
     return invitations.map((invitation) => this.mapInvitation(invitation));
   }
@@ -504,6 +632,7 @@ export class ProviderService {
     if (!profile.payoutReady) {
       throw new ConflictException('PROVIDER_PAYOUT_REQUIRED');
     }
+    const now = new Date();
     const { invitation, booking, pricing } = await this.prisma.$transaction(async (tx) => {
       const invitationEntity = await tx.bookingInvitation.findUnique({
         where: { id: invitationId },
@@ -528,7 +657,23 @@ export class ProviderService {
       if (invitationEntity.status !== PrismaBookingInvitationStatus.PENDING) {
         throw new BadRequestException('INVITATION_ALREADY_HANDLED');
       }
-      const bookingEntity = invitationEntity.booking as BookingWithRelations;
+      await tx.$queryRaw`SELECT 1 FROM "Booking" WHERE id = ${invitationEntity.bookingId} FOR UPDATE`;
+
+      const bookingEntity = (await tx.booking.findUnique({
+        where: { id: invitationEntity.bookingId },
+        include: {
+          assignments: true,
+          auditLog: true,
+          attachments: true,
+          fallbackTeamCandidate: { include: { members: true } },
+          client: { select: BOOKING_CLIENT_SELECT },
+        },
+      })) as BookingWithRelations | null;
+
+      if (!bookingEntity) {
+        throw new NotFoundException('BOOKING_NOT_FOUND');
+      }
+
       const requiredProviders = bookingEntity.requiredProviders ?? 1;
       const assignedCount = bookingEntity.assignments.length;
       if (assignedCount >= requiredProviders) {
@@ -541,16 +686,26 @@ export class ProviderService {
         throw new ConflictException('BOOKING_NOT_AVAILABLE');
       }
 
+      const acceptResult = await tx.bookingInvitation.updateMany({
+        where: {
+          id: invitationEntity.id,
+          status: PrismaBookingInvitationStatus.PENDING,
+        },
+        data: {
+          status: PrismaBookingInvitationStatus.ACCEPTED,
+          respondedAt: now,
+        },
+      });
+      if (!acceptResult.count) {
+        throw new ConflictException('BOOKING_ALREADY_ASSIGNED');
+      }
+
       await tx.bookingAssignment.create({
         data: {
           bookingId: bookingEntity.id,
           providerId: profile.id,
         },
       });
-
-      const remainingSlots = requiredProviders - (assignedCount + 1);
-      const nextStatus =
-        remainingSlots <= 0 ? PrismaBookingStatus.PENDING_CLIENT : PrismaBookingStatus.PENDING_PROVIDER;
 
       const durationHours = this.computeDurationHours(bookingEntity.startAt, bookingEntity.endAt);
       const laborCents = this.computeLaborCostCents({
@@ -576,7 +731,7 @@ export class ProviderService {
       const updatedBooking = await tx.booking.update({
         where: { id: bookingEntity.id },
         data: {
-          status: nextStatus,
+          status: PrismaBookingStatus.PENDING_CLIENT,
           pricingSubtotalCents: laborCents,
           pricingEcoCents: 0,
           pricingExtrasCents: platformFeeCents,
@@ -595,26 +750,17 @@ export class ProviderService {
         },
       });
 
-      await tx.bookingInvitation.update({
-        where: { id: invitationEntity.id },
+      await tx.bookingInvitation.updateMany({
+        where: {
+          bookingId: bookingEntity.id,
+          id: { not: invitationEntity.id },
+          status: PrismaBookingInvitationStatus.PENDING,
+        },
         data: {
-          status: PrismaBookingInvitationStatus.ACCEPTED,
-          respondedAt: new Date(),
+          status: PrismaBookingInvitationStatus.EXPIRED,
+          respondedAt: now,
         },
       });
-
-      if (remainingSlots <= 0) {
-        await tx.bookingInvitation.updateMany({
-          where: {
-            bookingId: bookingEntity.id,
-            status: PrismaBookingInvitationStatus.PENDING,
-          },
-          data: {
-            status: PrismaBookingInvitationStatus.EXPIRED,
-            respondedAt: new Date(),
-          },
-        });
-      }
 
       const freshInvitation = await tx.bookingInvitation.findUnique({
         where: { id: invitationEntity.id },
@@ -738,6 +884,48 @@ export class ProviderService {
     return this.mapInvitation(invitation);
   }
 
+  async markShortNoticeInvitationViewed(user: User, invitationId: string): Promise<ProviderBookingInvitation> {
+    await this.assertOnboardingComplete(user);
+    const profile = await this.requireProviderProfile(user.id);
+    const invitation: BookingInvitationWithBooking | null = await this.prisma.bookingInvitation.findUnique({
+      where: { id: invitationId },
+      include: {
+        booking: {
+          include: {
+            assignments: true,
+            auditLog: true,
+            attachments: true,
+            fallbackTeamCandidate: { include: { members: true } },
+            client: { select: BOOKING_CLIENT_SELECT },
+          },
+        },
+      },
+    });
+    if (!invitation || invitation.providerId !== profile.id) {
+      throw new NotFoundException('INVITATION_NOT_FOUND');
+    }
+    if (invitation.viewedAt) {
+      return this.mapInvitation(invitation);
+    }
+    const viewedAtUpdate: BookingInvitationViewedAtUpdate = { viewedAt: new Date() };
+    const updated: BookingInvitationWithBooking = await this.prisma.bookingInvitation.update({
+      where: { id: invitationId },
+      data: viewedAtUpdate,
+      include: {
+        booking: {
+          include: {
+            assignments: true,
+            auditLog: true,
+            attachments: true,
+            fallbackTeamCandidate: { include: { members: true } },
+            client: { select: BOOKING_CLIENT_SELECT },
+          },
+        },
+      },
+    });
+    return this.mapInvitation(updated);
+  }
+
   private buildCityVariants(city: string): string[] {
     const lower = city.toLowerCase();
     const capitalized = lower
@@ -812,29 +1000,41 @@ export class ProviderService {
     if (!entity) {
       throw new NotFoundException('INVITATION_NOT_FOUND');
     }
-    const booking = entity.booking;
+    const booking = entity.booking as BookingWithRelations;
+    const bookingDomain = BookingMapper.toDomain(booking);
     const durationMs = booking.endAt.getTime() - booking.startAt.getTime();
     const durationHours = Math.max(1, Number((durationMs / (1000 * 60 * 60)).toFixed(2)));
     const surfacesSquareMeters =
-      booking.surfacesSquareMeters !== null && booking.surfacesSquareMeters !== undefined
-        ? Number(booking.surfacesSquareMeters)
+      bookingDomain.surfacesSquareMeters !== null && bookingDomain.surfacesSquareMeters !== undefined
+        ? Number(bookingDomain.surfacesSquareMeters)
         : null;
+    const instructions =
+      bookingDomain.servicePreferences?.additionalInstructions ??
+      booking.additionalInstructions ??
+      bookingDomain.notes ??
+      undefined;
     return {
       id: entity.id,
       bookingId: booking.id,
       status: this.mapInvitationStatus(entity.status),
       createdAt: entity.createdAt.toISOString(),
       respondedAt: entity.respondedAt ? entity.respondedAt.toISOString() : null,
-      service: BookingMapper.toDomainService(booking.service),
+      viewedAt: entity.viewedAt ? entity.viewedAt.toISOString() : null,
+      service: bookingDomain.service,
       city: booking.addressCity,
       postalCode: booking.addressPostalCode,
       startAt: booking.startAt.toISOString(),
       endAt: booking.endAt.toISOString(),
       durationHours,
-      ecoPreference: BookingMapper.toDomainEcoPreference(booking.ecoPreference),
+      ecoPreference: bookingDomain.ecoPreference,
       surfacesSquareMeters,
       requiredProviders: booking.requiredProviders ?? 1,
       shortNoticeDepositCents: booking.shortNoticeDepositCents ?? undefined,
+      address: bookingDomain.address,
+      contact: bookingDomain.contact,
+      onsiteContact: bookingDomain.onsiteContact,
+      servicePreferences: bookingDomain.servicePreferences,
+      instructions,
     };
   }
 
@@ -849,6 +1049,20 @@ export class ProviderService {
       case PrismaBookingInvitationStatus.PENDING:
       default:
         return 'pending';
+    }
+  }
+
+  private mapInvitationStatusFilter(status: BookingInvitationStatus): PrismaBookingInvitationStatus {
+    switch (status) {
+      case 'accepted':
+        return PrismaBookingInvitationStatus.ACCEPTED;
+      case 'declined':
+        return PrismaBookingInvitationStatus.DECLINED;
+      case 'expired':
+        return PrismaBookingInvitationStatus.EXPIRED;
+      case 'pending':
+      default:
+        return PrismaBookingInvitationStatus.PENDING;
     }
   }
 
@@ -1102,6 +1316,54 @@ export class ProviderService {
     return this.mapIdentityDocument(document);
   }
 
+  async uploadProfilePhoto(user: User, payload: UploadProfilePhotoDto): Promise<ProviderProfileModel> {
+    const profile = await this.requireProviderProfile(user.id, { includeDocuments: true });
+    const source = payload.fileData?.trim() ?? '';
+    const inline = source.startsWith('data:');
+    const isHttp = /^https?:\/\//i.test(source);
+    if (!inline && !isHttp) {
+      throw new BadRequestException('PROFILE_PHOTO_INVALID_SOURCE');
+    }
+    if (inline && source.length > 5_000_000) {
+      throw new BadRequestException('PROFILE_PHOTO_TOO_LARGE');
+    }
+
+    await this.prisma.document.deleteMany({
+      where: { providerId: profile.id, type: DocumentType.PROFILE_PHOTO },
+    });
+
+    await this.prisma.document.create({
+      data: {
+        type: DocumentType.PROFILE_PHOTO,
+        url: source,
+        name: payload.fileName?.trim() || `profile-photo-${Date.now()}`,
+        metadata: {
+          inline,
+          uploadedVia: 'provider_profile',
+        } as Prisma.JsonObject,
+        reviewStatus: DocumentReviewStatus.APPROVED,
+        provider: { connect: { id: profile.id } },
+        uploadedBy: { connect: { id: user.id } },
+      },
+    });
+
+    const updated = await this.prisma.providerProfile.findUnique({
+      where: { id: profile.id },
+      include: {
+        documents: true,
+        serviceZones: true,
+        user: { select: { id: true, firstName: true, lastName: true, email: true } },
+      },
+    });
+    if (!updated) {
+      throw new NotFoundException('PROVIDER_PROFILE_NOT_FOUND');
+    }
+    return this.mapProviderProfile(updated as PrismaProviderProfile & {
+      documents?: Document[];
+      serviceZones?: PrismaProviderServiceZone[];
+    });
+  }
+
   async completeWelcomeSession(
     user: User,
     payload: CompleteWelcomeSessionDto
@@ -1347,29 +1609,30 @@ export class ProviderService {
   }
 
   private buildOnboardingStatus(
-    profile: PrismaProviderProfile,
+    profile: any,
     user: PrismaUser
   ): ProviderOnboardingStatusResponse {
-    const identityStarted = Boolean(
-      profile.gender || profile.birthDate || profile.birthCountry || profile.nationality
-    );
-    const addressStarted = Boolean(profile.addressStreetLine1 || profile.addressPostalCode || profile.addressCity);
+    const p = profile as any;
+    const identityStarted = Boolean(p.gender || p.birthDate || p.birthCountry || p.nationality);
+    const addressStarted = Boolean(p.addressStreetLine1 || p.addressPostalCode || p.addressCity);
     const phoneStarted = Boolean(user.phone);
-    const paymentsReady = Boolean(profile.payoutReady && profile.kycStatus === 'verified');
+    const paymentsReady = Boolean(p.payoutReady && p.kycStatus === 'verified');
+    const payoutActivation = (p.payoutActivationStatus ?? 'pending').toLowerCase();
+    const payoutsCompleted = paymentsReady || payoutActivation === 'active';
 
     const profileStarted =
-      Boolean(profile.bio?.trim()) ||
-      Boolean(profile.serviceAreas?.length) ||
-      Boolean(profile.languages?.length);
-    const pricingStarted = (profile.hourlyRateCents ?? 0) > 0;
-    const pricingComplete = Boolean(profile.pricingCompletedAt || pricingStarted);
+      Boolean(p.bio?.trim()) ||
+      Boolean(p.serviceAreas?.length) ||
+      Boolean(p.languages?.length);
+    const pricingStarted = (p.hourlyRateCents ?? 0) > 0;
+    const pricingComplete = Boolean(p.pricingCompletedAt || pricingStarted);
 
     const identityVerificationStatus =
-      profile.identityVerificationStatus ?? PrismaIdentityVerificationStatus.NOT_STARTED;
+      p.identityVerificationStatus ?? PrismaIdentityVerificationStatus.NOT_STARTED;
     const idCheckStatus = this.resolveIdentityTaskStatus(identityVerificationStatus);
     const idCheckCompleted = idCheckStatus === 'completed';
-    const signupFeePaid = Boolean(profile.signupFeePaidAt);
-    const welcomeSessionDone = Boolean(profile.welcomeSessionCompletedAt);
+    const signupFeePaid = Boolean(p.signupFeePaidAt);
+    const welcomeSessionDone = Boolean(p.welcomeSessionCompletedAt);
 
     const tasks: ProviderOnboardingTask[] = [
       {
@@ -1393,7 +1656,7 @@ export class ProviderService {
         id: 'address',
         title: 'Ajouter votre adresse allemande',
         description: 'Nous intervenons uniquement en Allemagne pour le moment.',
-        status: profile.addressCompletedAt
+        status: p.addressCompletedAt
           ? 'completed'
           : addressStarted
             ? 'in_progress'
@@ -1404,7 +1667,7 @@ export class ProviderService {
         id: 'phone',
         title: 'Vérifier votre numéro de téléphone',
         description: 'Indispensable pour communiquer avec les clients.',
-        status: profile.phoneVerifiedAt
+        status: p.phoneVerifiedAt
           ? 'completed'
           : phoneStarted
             ? 'in_progress'
@@ -1415,7 +1678,7 @@ export class ProviderService {
         id: 'profile',
         title: 'Compléter votre profil public',
         description: 'Bio, langues parlées et zones desservies.',
-        status: profile.profileCompletedAt
+        status: p.profileCompletedAt
           ? 'completed'
           : profileStarted
             ? 'in_progress'
@@ -1433,7 +1696,7 @@ export class ProviderService {
         id: 'payments',
         title: 'Activer vos paiements',
         description: 'Ajoutez vos coordonnées bancaires pour recevoir vos virements.',
-        status: paymentsReady ? 'completed' : profile.payoutReady ? 'in_progress' : 'pending',
+        status: payoutsCompleted ? 'completed' : p.payoutReady ? 'in_progress' : 'pending',
         durationMinutes: 5,
       },
       {
@@ -1517,8 +1780,6 @@ export class ProviderService {
       completedPrevious,
       ecoAssignments,
       totalAssignments,
-      revenueCurrent,
-      revenuePrevious,
       ratingAggregate,
       upcomingRaw,
       scheduleRaw,
@@ -1554,8 +1815,6 @@ export class ProviderService {
       this.prisma.booking.count({
         where: { assignments: { some: { providerId } }, updatedAt: { gte: thirtyDaysAgo } },
       }),
-      this.sumDistributions(providerId, { occurredAt: { gte: thirtyDaysAgo } }),
-      this.sumDistributions(providerId, { occurredAt: { gte: previousWindowStart, lt: thirtyDaysAgo } }),
       this.prisma.review.aggregate({
         _avg: { score: true },
         where: { targetProviderId: providerId },
@@ -1643,7 +1902,13 @@ export class ProviderService {
           beneficiaryType: 'provider',
         },
         include: {
-          payment: true,
+          payment: {
+            include: {
+              booking: {
+                select: EARNING_BOOKING_SELECT,
+              },
+            },
+          },
         },
         orderBy: { updatedAt: 'desc' },
         take: 50,
@@ -1651,12 +1916,18 @@ export class ProviderService {
       this.fetchResourcesForProvider(providerId),
     ]);
 
+    const earningsOverview = await this.resolveProviderEarnings({
+      profile,
+      paymentDistributions: paymentDistributions as PaymentDistributionWithBooking[],
+    });
     const satisfaction = ratingAggregate._avg.score ? Number((ratingAggregate._avg.score ?? 0).toFixed(2)) : 0;
-    const revenueCentsCurrent = revenueCurrent ?? 0;
-    const revenueCentsPrevious = revenuePrevious ?? 0;
     const ecoRate = totalAssignments > 0 ? Math.round((ecoAssignments / totalAssignments) * 100) : 0;
     const responseMinutes = this.computeResponseMinutes(resolutionSamples);
-    const paymentsSummary = this.buildPaymentsSummary(paymentDistributions);
+    const paymentsSummary = {
+      totalCents: earningsOverview.summary.payableCents + earningsOverview.summary.paidCents,
+      pendingCents: earningsOverview.summary.payableCents,
+      lastPayoutAt: earningsOverview.summary.lastPayoutAt,
+    };
 
     const alerts: ProviderDashboardResponse['alerts'] = this.buildAlerts({
       pendingConfirmations,
@@ -1697,13 +1968,16 @@ export class ProviderService {
     return {
       metrics: {
         completed: completedCurrent,
-        revenueCents: Math.round(revenueCentsCurrent),
+        revenueCents: Math.round(earningsOverview.summary.thisMonthCents),
         rating: satisfaction,
         ecoRate,
       },
       trends: {
         completed: this.computeTrend(completedCurrent, completedPrevious),
-        revenue: this.computeTrend(revenueCentsCurrent, revenueCentsPrevious),
+        revenue: this.computeTrend(
+          earningsOverview.summary.thisMonthCents,
+          earningsOverview.summary.previousMonthCents
+        ),
         rating: 0,
         ecoRate: 0,
       },
@@ -1718,8 +1992,20 @@ export class ProviderService {
         responseMinutes,
       },
       payments: paymentsSummary,
+      earnings: earningsOverview.summary,
       resources,
     };
+  }
+
+  async getEarnings(user: User, filters?: { status?: ProviderEarningStatus; limit?: number; offset?: number }): Promise<ProviderEarningsResponse> {
+    await this.assertOnboardingComplete(user);
+    const profile = await this.requireProviderProfile(user.id);
+    return this.resolveProviderEarnings({
+      profile,
+      status: filters?.status,
+      limit: filters?.limit,
+      offset: filters?.offset,
+    });
   }
 
   async listMissions(user: User, filters: ProviderMissionFiltersDto): Promise<BookingRequest[]> {
@@ -1848,8 +2134,10 @@ export class ProviderService {
       throw new ConflictException({
         code: 'PROVIDER_PAYOUT_REQUIRED',
         message: 'Veuillez finaliser la configuration de vos paiements avant d’accepter la mission.',
-        onboardingUrl: onboarding.url,
-        expiresAt: onboarding.expiresAt,
+        onboardingUrl: onboarding.url ?? null,
+        expiresAt: onboarding.expiresAt ?? null,
+        payoutReady: onboarding.payoutReady,
+        payoutStatus: onboarding.status,
       });
     }
 
@@ -2248,6 +2536,18 @@ export class ProviderService {
     };
   }
 
+  private resolveProfilePhotoUrl(documents?: Document[]): string | undefined {
+    if (!documents || documents.length === 0) {
+      return undefined;
+    }
+    const profilePhoto = documents.find((doc) => doc.type === DocumentType.PROFILE_PHOTO);
+    if (profilePhoto) {
+      return profilePhoto.url;
+    }
+    const fallback = documents.find((doc) => doc.type === DocumentType.PHOTO_BEFORE);
+    return fallback?.url;
+  }
+
   private mapProviderProfile(
     entity: PrismaProviderProfile & { documents?: Document[]; serviceZones?: PrismaProviderServiceZone[] }
   ): ProviderProfileModel {
@@ -2277,11 +2577,16 @@ export class ProviderService {
       ratingAverage: entity.ratingAverage ?? undefined,
       ratingCount: entity.ratingCount ?? undefined,
       offersEco: entity.offersEco,
+      photoUrl: this.resolveProfilePhotoUrl(entity.documents),
       acceptsAnimals: entity.acceptsAnimals ?? false,
       payoutMethod: (entity.payoutMethod as ProviderProfileModel['payoutMethod']) ?? undefined,
       payoutLast4: entity.payoutLast4 ?? undefined,
       payoutReady: entity.payoutReady ?? false,
       kycStatus: entity.kycStatus ?? undefined,
+      payoutActivationStatus: ((entity as any).payoutActivationStatus as ProviderProfileModel['payoutActivationStatus']) ?? undefined,
+      payoutAccountHolder: (entity as any).payoutAccountHolder ?? undefined,
+      payoutIbanMasked: (entity as any).payoutIbanMasked ?? undefined,
+      payoutBankName: (entity as any).payoutBankName ?? undefined,
       gender: entity.gender ?? undefined,
       birthDate: entity.birthDate ? entity.birthDate.toISOString() : undefined,
       birthCity: entity.birthCity ?? undefined,
@@ -2390,25 +2695,6 @@ export class ProviderService {
     }));
   }
 
-  private sumDistributions(
-    providerProfileId: string,
-    distributionWindow: { occurredAt: { gte: Date } | { gte: Date; lt: Date } }
-  ): Promise<number> {
-    return this.prisma.paymentDistribution!
-      .aggregate({
-        _sum: { amountCents: true },
-        where: {
-          beneficiaryId: providerProfileId,
-          beneficiaryType: 'provider',
-          payment: {
-            status: { in: [PrismaPaymentStatus.CAPTURED, PrismaPaymentStatus.RELEASED] },
-            occurredAt: distributionWindow.occurredAt,
-          },
-        },
-      })
-      .then((result) => result._sum.amountCents ?? 0);
-  }
-
   private buildAlerts(payload: {
     pendingConfirmations: number;
     overdueMissions: number;
@@ -2504,29 +2790,283 @@ export class ProviderService {
       }));
   }
 
-  private buildPaymentsSummary(
-    distributions: Array<PrismaPaymentDistributionWithMeta & { payment: PrismaPaymentWithProvider | null }>
-  ) {
-    const totalCents = distributions
-      .filter((distribution) => {
-        if (!distribution.payment?.status) {
-          return false;
-        }
-        return (
-          distribution.payment.status === PrismaPaymentStatus.CAPTURED ||
-          distribution.payment.status === PrismaPaymentStatus.RELEASED
-        );
+  private async resolveProviderEarnings(params: {
+    profile: PrismaProviderProfile;
+    paymentDistributions?: PaymentDistributionWithBooking[];
+    status?: ProviderEarningStatus;
+    limit?: number;
+    offset?: number;
+  }): Promise<ProviderEarningsResponse> {
+    const limit = params.limit ?? 100;
+    const offset = params.offset ?? 0;
+    const providerId = params.profile.id;
+    const now = new Date();
+    const lookbackStart = this.shiftDays(now, -120);
+    const [distributions, awaitingValidation, upcomingBookings] = await Promise.all([
+      (params.paymentDistributions ??
+        this.prisma.paymentDistribution.findMany({
+          where: {
+            beneficiaryId: providerId,
+            beneficiaryType: 'provider',
+          },
+          include: {
+            payment: {
+              include: {
+                booking: {
+                  select: EARNING_BOOKING_SELECT,
+                },
+              },
+            },
+            providerPayout: true,
+          },
+          orderBy: { updatedAt: 'desc' },
+          take: limit,
+        })) as Promise<PaymentDistributionWithBooking[]>,
+      this.prisma.booking.findMany({
+        where: {
+          assignments: { some: { providerId } },
+          status: {
+            in: [PrismaBookingStatus.COMPLETED, PrismaBookingStatus.IN_PROGRESS],
+          },
+          endAt: { gte: lookbackStart, lt: now },
+          payments: {
+            none: {
+              distributions: {
+                some: { beneficiaryId: providerId, beneficiaryType: 'provider' },
+              },
+            },
+          },
+        },
+        select: EARNING_BOOKING_SELECT,
+        orderBy: { endAt: 'desc' },
+        skip: offset,
+        take: limit,
+      }),
+      this.prisma.booking.findMany({
+        where: {
+          assignments: { some: { providerId } },
+          OR: [
+            {
+              status: {
+                in: [
+                  PrismaBookingStatus.PENDING_PROVIDER,
+                  PrismaBookingStatus.PENDING_CLIENT,
+                  PrismaBookingStatus.CONFIRMED,
+                ],
+              },
+              startAt: { gte: now },
+            },
+            {
+              status: PrismaBookingStatus.IN_PROGRESS,
+              endAt: { gt: now },
+            },
+          ],
+          payments: {
+            none: {
+              distributions: {
+                some: { beneficiaryId: providerId, beneficiaryType: 'provider' },
+              },
+            },
+          },
+        },
+        select: EARNING_BOOKING_SELECT,
+        orderBy: { startAt: 'asc' },
+        take: limit,
+      }),
+    ]);
+
+    const payableOrPaidMissions = distributions
+      .filter((distribution) => Boolean(distribution.payment?.booking))
+      .map((distribution) => this.mapDistributionToEarning(distribution));
+
+    const awaitingValidationMissions = awaitingValidation.map((booking) =>
+      this.mapProjectedEarning({
+        booking,
+        profile: params.profile,
+        status: 'awaiting_validation',
+        estimated: false,
       })
-      .reduce((sum, distribution) => sum + distribution.amountCents, 0);
-    const pendingCents = distributions
-      .filter((distribution) => (distribution.payoutStatus ?? 'pending') !== 'paid')
-      .reduce((sum, distribution) => sum + distribution.amountCents, 0);
-    const lastPayout = distributions.find((distribution) => distribution.payoutStatus === 'paid');
+    );
+
+    const upcomingMissions = upcomingBookings.map((booking) =>
+      this.mapProjectedEarning({
+        booking,
+        profile: params.profile,
+        status: 'upcoming',
+        estimated: true,
+      })
+    );
+
+    let missions = [...payableOrPaidMissions, ...awaitingValidationMissions, ...upcomingMissions].sort(
+      (a, b) => new Date(b.endAt).getTime() - new Date(a.endAt).getTime()
+    );
+
+    if (params.status) {
+      missions = missions.filter((mission) => mission.status === params.status);
+    }
+
+    missions = missions.slice(offset, offset + limit);
+
+    const summary = this.computeEarningSummary(missions, now);
 
     return {
-      totalCents,
-      pendingCents,
-      lastPayoutAt: lastPayout ? lastPayout.updatedAt.toISOString() : null,
+      summary,
+      missions,
+    };
+  }
+
+  private mapDistributionToEarning(distribution: PaymentDistributionWithBooking): ProviderMissionEarning {
+    const booking = distribution.payment?.booking;
+    if (!booking) {
+      throw new NotFoundException('BOOKING_NOT_FOUND');
+    }
+    const rawStatus = this.mapPayoutStatus(distribution.payoutStatus);
+    const status: ProviderMissionEarning['status'] = rawStatus === 'paid' ? 'paid' : 'payable';
+    const durationHours =
+      booking.durationHours !== null && booking.durationHours !== undefined
+        ? Number(booking.durationHours)
+        : this.computeDurationHours(booking.startAt, booking.endAt);
+    const grossCents = Math.max(
+      distribution.amountCents,
+      Math.round(distribution.amountCents / NET_PROVIDER_SHARE_FACTOR)
+    );
+    const commissionCents = Math.max(0, grossCents - distribution.amountCents);
+    return {
+      id: distribution.id,
+      bookingId: booking.id,
+      service: BookingMapper.toDomainService(booking.service),
+      startAt: booking.startAt.toISOString(),
+      endAt: booking.endAt.toISOString(),
+      durationHours: Number(durationHours.toFixed(2)),
+      city: booking.addressCity ?? undefined,
+      postalCode: booking.addressPostalCode ?? undefined,
+      client: booking.client
+        ? this.composeName(booking.client.firstName, booking.client.lastName)
+        : undefined,
+      amountCents: distribution.amountCents,
+      grossCents,
+      commissionCents,
+      status,
+      source: 'distribution',
+      expectedPayoutAt:
+        distribution.providerPayout?.availableOn?.toISOString() ??
+        distribution.availableOn?.toISOString() ??
+        null,
+      estimated: false,
+      payoutReference:
+        distribution.providerPayout?.externalReference ?? distribution.providerPayoutId ?? undefined,
+      payoutReleasedAt: distribution.releasedAt ? distribution.releasedAt.toISOString() : undefined,
+    };
+  }
+
+  private mapProjectedEarning(params: {
+    booking: BookingEarningSnapshot;
+    profile: PrismaProviderProfile;
+    status: ProviderEarningStatus;
+    estimated: boolean;
+  }): ProviderMissionEarning {
+    const { booking, profile, status, estimated } = params;
+    const durationHours =
+      booking.durationHours !== null && booking.durationHours !== undefined
+        ? Number(booking.durationHours)
+        : this.computeDurationHours(booking.startAt, booking.endAt);
+    const hourlyRate = Math.max(0, profile.hourlyRateCents ?? 0);
+    const grossCents =
+      hourlyRate > 0
+        ? Math.round(durationHours * hourlyRate)
+        : Math.max(0, booking.pricingSubtotalCents ?? 0);
+    const commissionBase = Math.round(grossCents * PLATFORM_COMMISSION_RATE);
+    const vatPortion = Math.round(commissionBase * PLATFORM_COMMISSION_VAT_RATE);
+    const netCents = Math.max(0, grossCents - commissionBase - vatPortion);
+
+    return {
+      id: booking.id,
+      bookingId: booking.id,
+      service: BookingMapper.toDomainService(booking.service),
+      startAt: booking.startAt.toISOString(),
+      endAt: booking.endAt.toISOString(),
+      durationHours: Number(durationHours.toFixed(2)),
+      city: booking.addressCity ?? undefined,
+      postalCode: booking.addressPostalCode ?? undefined,
+      client: booking.client
+        ? this.composeName(booking.client.firstName, booking.client.lastName)
+        : undefined,
+      amountCents: netCents,
+      grossCents,
+      commissionCents: commissionBase + vatPortion,
+      status,
+      expectedPayoutAt: null,
+      estimated,
+      source: 'projection',
+    };
+  }
+
+  private computeEarningSummary(
+    missions: ProviderMissionEarning[],
+    now: Date
+  ): ProviderEarningsResponse['summary'] {
+    const startOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfPreviousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    let upcomingCents = 0;
+    let awaitingValidationCents = 0;
+    let payableCents = 0;
+    let paidCents = 0;
+    let lastPayoutAt: string | null = null;
+    let thisMonthCents = 0;
+    let previousMonthCents = 0;
+    let missionsCount = {
+      upcoming: 0,
+      awaitingValidation: 0,
+      payable: 0,
+      paid: 0,
+    };
+
+    missions.forEach((mission) => {
+      const amount = mission.amountCents;
+      const missionEnd = new Date(mission.endAt);
+      switch (mission.status) {
+        case 'upcoming':
+          upcomingCents += amount;
+          missionsCount.upcoming += 1;
+          break;
+        case 'awaiting_validation':
+          awaitingValidationCents += amount;
+          missionsCount.awaitingValidation += 1;
+          break;
+        case 'payable':
+          payableCents += amount;
+          missionsCount.payable += 1;
+          break;
+        case 'paid':
+          paidCents += amount;
+          missionsCount.paid += 1;
+          if (mission.payoutReleasedAt && (!lastPayoutAt || mission.payoutReleasedAt > lastPayoutAt)) {
+            lastPayoutAt = mission.payoutReleasedAt;
+          }
+          break;
+        default:
+          break;
+      }
+
+      if (['payable', 'paid'].includes(mission.status)) {
+        if (missionEnd >= startOfCurrentMonth) {
+          thisMonthCents += amount;
+        } else if (missionEnd >= startOfPreviousMonth && missionEnd < startOfCurrentMonth) {
+          previousMonthCents += amount;
+        }
+      }
+    });
+
+    return {
+      totalEarnedCents: awaitingValidationCents + payableCents + paidCents,
+      upcomingCents,
+      awaitingValidationCents,
+      payableCents,
+      paidCents,
+      missions: missionsCount,
+      thisMonthCents,
+      previousMonthCents,
+      lastPayoutAt,
     };
   }
 

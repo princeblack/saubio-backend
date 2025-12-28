@@ -6,6 +6,11 @@ import { mkdirSync, existsSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import type { AppEnvironmentConfig } from '../../config/configuration';
 import { DocumentType, Prisma, type Document, type Invoice, type Payment } from '@prisma/client';
+import {
+  PLATFORM_COMMISSION_RATE,
+  PLATFORM_COMMISSION_VAT_RATE as VAT_RATE,
+  NET_PROVIDER_SHARE_FACTOR as NET_SHARE_FACTOR,
+} from '../payment.constants';
 
 type StoredMission = {
   bookingId: string;
@@ -18,10 +23,6 @@ type StoredMission = {
   endAt?: string;
   clientTotalCents?: number;
 };
-
-const PLATFORM_COMMISSION_RATE = 0.25;
-const VAT_RATE = 0.19;
-const NET_SHARE_FACTOR = 1 - PLATFORM_COMMISSION_RATE * (1 + VAT_RATE); // portion that goes to provider
 
 const COMPANY_INFO = {
   name: 'Saubio GmbH',

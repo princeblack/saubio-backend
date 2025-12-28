@@ -12,6 +12,9 @@ import { CapturePaymentDto } from './dto/capture-payment.dto';
 import { PrepareCheckoutPaymentDto } from './dto/prepare-checkout-payment.dto';
 import { CreateMandateDto } from './dto/create-mandate.dto';
 import { UpdateProviderPayoutStatusDto } from './dto/update-provider-payout-status.dto';
+import { ProviderPayoutSetupDto } from './dto/provider-payout-setup.dto';
+import { ProviderPayoutAdminDto } from './dto/provider-payout-admin.dto';
+import { ProviderBankInfoDto } from './dto/provider-bank-info.dto';
 
 @ApiTags('payments')
 @Controller('payments')
@@ -39,14 +42,29 @@ export class PaymentsController {
 
   @Post('providers/onboarding/self')
   @Roles('provider')
-  startOwnOnboarding(@CurrentUser() user: User) {
-    return this.paymentsService.startProviderOnboardingForUser(user);
+  startOwnOnboarding(@CurrentUser() user: User, @Body() payload: ProviderPayoutSetupDto) {
+    return this.paymentsService.setupProviderPayout(user, payload);
   }
 
   @Post('providers/onboarding')
   @Roles('admin', 'employee')
-  startProviderOnboardingAdmin(@Body() payload: ProviderOnboardingDto) {
-    return this.paymentsService.startProviderOnboardingByAdmin(payload);
+  startProviderOnboardingAdmin(@Body() payload: ProviderPayoutAdminDto) {
+    return this.paymentsService.setupProviderPayoutByAdmin(payload);
+  }
+
+  @Get('providers/payment-method/bank')
+  @Roles('provider', 'employee', 'admin')
+  getProviderBankInfo(@CurrentUser() user: User): Promise<ProviderBankInfoDto> {
+    return this.paymentsService.getProviderBankInfo(user);
+  }
+
+  @Post('providers/payment-method/bank')
+  @Roles('provider', 'employee', 'admin')
+  upsertProviderBankInfo(
+    @CurrentUser() user: User,
+    @Body() payload: ProviderPayoutSetupDto
+  ): Promise<ProviderBankInfoDto> {
+    return this.paymentsService.saveProviderBankInfo(user, payload);
   }
 
   @Patch('providers/:providerId/payout-status')

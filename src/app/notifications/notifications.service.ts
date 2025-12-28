@@ -13,7 +13,10 @@ interface EmitNotificationPayload {
   userIds: string[];
   type: NotificationType;
   payload: Record<string, unknown>;
+  dedupeKey?: string;
 }
+
+const NOTIFICATION_DEDUPE_FIELD = '__dedupeKey';
 
 @Injectable()
 export class NotificationsService {
@@ -112,12 +115,36 @@ export class NotificationsService {
   }
 
   async emit(payload: EmitNotificationPayload) {
-    const uniqueUserIds = Array.from(new Set(payload.userIds));
+    let uniqueUserIds = Array.from(new Set(payload.userIds));
     if (uniqueUserIds.length === 0) {
       return;
     }
 
-    const serializedPayload = payload.payload as Prisma.JsonObject;
+    if (payload.dedupeKey) {
+      const existing = await this.prisma.notification.findMany({
+        where: {
+          userId: { in: uniqueUserIds },
+          type: payload.type,
+          payload: {
+            path: [NOTIFICATION_DEDUPE_FIELD],
+            equals: payload.dedupeKey,
+          },
+        },
+        select: { userId: true },
+      });
+      if (existing.length) {
+        const alreadyNotified = new Set(existing.map((entry) => entry.userId));
+        uniqueUserIds = uniqueUserIds.filter((userId) => !alreadyNotified.has(userId));
+        if (uniqueUserIds.length === 0) {
+          return;
+        }
+      }
+    }
+
+    const serializedPayload = {
+      ...payload.payload,
+      ...(payload.dedupeKey ? { [NOTIFICATION_DEDUPE_FIELD]: payload.dedupeKey } : {}),
+    } as Prisma.JsonObject;
     const createdAtIso = new Date().toISOString();
 
     await this.prisma.notification.createMany({

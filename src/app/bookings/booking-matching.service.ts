@@ -371,6 +371,14 @@ export class BookingMatchingService {
     return value;
   }
 
+  async getMatchingConfig(): Promise<MatchingConfigShape> {
+    return this.loadMatchingConfig();
+  }
+
+  invalidateCache(): void {
+    this.matchingConfigCache = null;
+  }
+
   private resolveWeights(
     weights: Record<string, number>,
     includeEco: boolean

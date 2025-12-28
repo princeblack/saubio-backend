@@ -761,47 +761,7 @@
   },
   "sidebar": {
     "client": {
-      "dashboard": "Tableau de bord",
-      "bookings": "Réservations",
-      "new": "Nouvelle demande",
-      "notifications": "Notifications",
-      "support": "Support",
-      "profile": "Profil"
-    },
-    "provider": {
-      "dashboard": "Tableau de bord",
-      "missions": "Demandes & missions",
-      "profileSection": "Profil & identité",
-      "profilePublic": "Profil public",
-      "profileAddress": "Adresses",
-      "profileAreas": "Zones d’intervention",
-      "profileIdentity": "Documents d’identité",
-      "earningsSection": "Revenus & tarifs",
-      "earningsOverview": "Mes revenus",
-      "earningsPricing": "Tarifs horaires",
-      "earningsInvoices": "Factures & versements",
-      "supportSection": "Aide & ressources",
-      "supportLibrary": "Centre de ressources",
-      "supportChecklist": "Checklist d’activation",
-      "documentsShortcut": "Mes documents",
-      "pricingShortcut": "Mes tarifs",
-      "invoicesShortcut": "Mes factures",
-      "zonesShortcut": "Mes zones",
-      "availabilitySection": "Disponibilités",
-      "availabilitySchedule": "Gérer mes créneaux",
-      "availabilityTimeOff": "Déclarer une absence",
-      "statsSection": "Statistiques",
-      "statsReliability": "Fiabilité & statut",
-      "statsReviews": "Avis clients"
-    },
-    "admin": {
-      "dashboard": "Tableau de bord",
-      "users": "Utilisateurs",
-      "providers": "Demandes prestataires",
-      "bookings": "Réservations",
-      "support": "Support",
-      "operations": "Opérations",
-      "tickets": "Tickets"
+      "mandates": "Mandats SEPA"
     }
   },
   "clientDashboard": {
@@ -884,12 +844,14 @@
     },
     "scheduleTitle": "Planning à venir",
     "alertsTitle": "Alertes qualité",
-    "paymentsTitle": "Paiements",
+    "paymentsTitle": "Revenus & PMA",
     "feedbackTitle": "Avis clients",
     "qualityTitle": "Qualité opérationnelle",
     "payments": {
-      "total": "Paiements reçus",
-      "pending": "En attente",
+      "total": "Total gagné (hors missions à venir)",
+      "validation": "En attente de validation",
+      "pending": "À payer (PMA en attente)",
+      "paid": "Déjà versé",
       "lastPayout": "Dernier versement"
     },
     "quality": {
@@ -1105,23 +1067,49 @@
   },
   "providerRevenue": {
     "title": "Revenus",
-    "subtitle": "Suivez vos paiements et versements à venir.",
-    "summaryTitle": "Synthèse des paiements",
-    "tableTitle": "Historique des paiements",
-    "chartTitle": "Évolution des revenus",
+    "subtitle": "Suivez vos missions terminées, vos montants dus et vos versements.",
+    "overviewTitle": "Vue d’ensemble",
+    "historyTitle": "Historique PMA",
+    "chartTitle": "Évolution des revenus confirmés",
+    "tableTitle": "Historique des missions rémunérées",
+    "summary": {
+      "total": "Total gagné (hors missions à venir)",
+      "awaitingValidation": "En attente de validation",
+      "payable": "À payer (PMA en attente)",
+      "paid": "Déjà versé"
+    },
     "columns": {
       "date": "Date",
-      "booking": "Mission",
-      "amount": "Montant",
+      "client": "Client",
+      "service": "Mission",
+      "gross": "Montant brut",
+      "commission": "Commission",
+      "net": "Montant net",
       "status": "Statut"
     },
-    "status": {
-      "captured": "Capturé",
-      "authorized": "Autorisé",
-      "pending": "En attente",
-      "processing": "En traitement",
+    "statuses": {
+      "upcoming": "À venir",
+      "awaiting_validation": "En attente de validation",
+      "payable": "À payer",
       "paid": "Payé"
-    }
+    },
+    "statusDescriptions": {
+      "upcoming": "Mission planifiée. Montant estimé sous réserve de réalisation.",
+      "awaiting_validation": "Mission terminée, vérification en cours.",
+      "payable": "Montant validé. Versement en préparation.",
+      "paid": "Versement effectué sur votre compte."
+    },
+    "expectedPayout": "Versement estimé le {{date}}",
+    "empty": {
+      "overview": "Vous verrez ici vos montants dès votre première mission terminée.",
+      "table": "Aucune mission rémunérée pour l’instant."
+    },
+    "documentsTitle": "Relevés & factures",
+    "documentsSubtitle": "Téléchargez vos documents comptables dès qu’ils sont disponibles.",
+    "documentsErrorTitle": "Impossible de charger vos relevés",
+    "documentsErrorDescription": "Réessayez dans quelques instants.",
+    "documentsDownload": "Télécharger",
+    "documentsEmpty": "Vos relevés seront disponibles après votre premier paiement."
   },
   "providerResourcesPage": {
     "title": "Ressources",
@@ -1184,6 +1172,41 @@
       "documentsLabel": "{{count}} document(s) envoyés",
       "noDocuments": "Aucun document envoyé pour le moment",
       "cta": "Gérer mes documents"
+    },
+    "payout": {
+      "requiredTitle": "Activez vos paiements",
+      "requiredDescription": "Ajoutez vos coordonnées bancaires pour recevoir vos paiements. Tout se passe dans l’application, sans redirection externe.",
+      "reviewTitle": "Vérification en cours",
+      "reviewDescription": "Vos informations bancaires sont en cours d’analyse. Cela prend généralement quelques minutes.",
+      "rejectedTitle": "Paiement non validé",
+      "rejectedDescription": "Certaines informations doivent être corrigées. Réessayez avec un IBAN valide.",
+      "readyTitle": "Paiements activés",
+      "readyDescription": "Vos coordonnées sont validées. Vous recevrez automatiquement vos versements après chaque mission.",
+      "method": "Méthode",
+      "bank": "Virement bancaire",
+      "card": "Carte bancaire",
+      "last4": "Derniers chiffres",
+      "status": "Statut",
+      "statusLabel": {
+        "pending": "À compléter",
+        "in_review": "Vérification en cours",
+        "verified": "Vérifié",
+        "rejected": "Rejeté"
+      },
+      "statusHint": {
+        "pending": "Ajoutez vos coordonnées bancaires pour lancer la vérification.",
+        "in_review": "Nous analysons vos informations. Cette étape peut prendre quelques minutes.",
+        "rejected": "Les informations ont été refusées. Merci de corriger et de réessayer.",
+        "verified": "Vos paiements sont prêts."
+      },
+      "cta": "Enregistrer mes coordonnées bancaires",
+      "opening": "Activation en cours…",
+      "error": "Impossible d’enregistrer vos coordonnées pour le moment.",
+      "accountHolder": "Titulaire du compte",
+      "iban": "IBAN",
+      "ibanError": "IBAN invalide. Vérifiez le format.",
+      "success": "Coordonnées bancaires enregistrées. Vous recevrez vos paiements automatiquement.",
+      "pendingReview": "Coordonnées enregistrées, validation en cours."
     }
   },
   "providerAvailabilityPage": {
@@ -1368,11 +1391,6 @@
     },
     "noIncidents": "Aucun incident présentement.",
     "noServices": "Pas de service enregistré."
-  },
-  "sidebar": {
-    "client": {
-      "mandates": "Mandats SEPA"
-    }
   },
   "clientMandates": {
     "title": "Mandats bancaires & historique SEPA",

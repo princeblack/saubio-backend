@@ -7,6 +7,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 @Injectable()
 export class BookingNotificationsService {
   private opsRecipientCache: { ids: string[]; expiresAt: number } | null = null;
+  private matchingProgressCache = new Map<string, number>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -20,6 +21,7 @@ export class BookingNotificationsService {
     includeClient?: boolean;
     providerTargets?: string[];
     extraUserIds?: string[];
+    dedupeKey?: string;
   }) {
     const recipients = new Set<string>(options.extraUserIds ?? []);
     if (options.includeClient !== false) {
@@ -44,6 +46,7 @@ export class BookingNotificationsService {
         bookingId: options.booking.id,
         ...options.payload,
       },
+      dedupeKey: options.dedupeKey,
     });
   }
 
@@ -54,11 +57,30 @@ export class BookingNotificationsService {
     providerTargets?: string[];
     extraUserIds?: string[];
     includeOps?: boolean;
+    dedupeKey?: string;
   }) {
     const opsRecipients =
       options.includeOps === false ? [] : await this.resolveOpsRecipients();
     const mergedExtraRecipients = new Set<string>(options.extraUserIds ?? []);
     opsRecipients.forEach((id) => mergedExtraRecipients.add(id));
+
+    const stage = typeof options.payload.stage === 'string' ? options.payload.stage : undefined;
+    const status = typeof options.payload.status === 'string' ? options.payload.status : undefined;
+    const contextKey =
+      (typeof options.payload.contextKey === 'string' && options.payload.contextKey) ||
+      options.booking.id;
+    const fingerprint =
+      stage && status ? `${options.booking.id}:${contextKey}:${stage}:${status}` : null;
+    if (fingerprint) {
+      const expiry = this.matchingProgressCache.get(fingerprint);
+      const now = Date.now();
+      if (expiry && expiry > now) {
+        return;
+      }
+      this.matchingProgressCache.set(fingerprint, now + 30_000);
+    }
+    const resolvedDedupeKey =
+      options.dedupeKey ?? (stage && status ? `${contextKey}:${stage}:${status}` : undefined);
 
     await this.notifyParticipants({
       booking: options.booking,
@@ -67,6 +89,7 @@ export class BookingNotificationsService {
       includeClient: options.includeClient,
       providerTargets: options.providerTargets,
       extraUserIds: Array.from(mergedExtraRecipients),
+      dedupeKey: resolvedDedupeKey,
     });
   }
 
