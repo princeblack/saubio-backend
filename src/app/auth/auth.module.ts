@@ -8,11 +8,13 @@ import { RefreshTokensService } from './refresh-tokens.service';
 import { AccessTokenGuard } from './guards/access-token.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { SecurityModule } from '../security/security.module';
 
 @Module({
   imports: [
     UsersModule,
     forwardRef(() => NotificationsModule),
+    forwardRef(() => SecurityModule),
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService): JwtModuleOptions => {

@@ -88,6 +88,14 @@ type CreatePaymentRecordInput = {
   provider?: PaymentProvider;
 };
 
+export interface MollieWebhookProcessingResult {
+  paymentId?: string;
+  bookingId?: string;
+  providerProfileId?: string;
+  userId?: string;
+  metadata?: Record<string, unknown> | null;
+}
+
 type InitializePaymentResult = {
   paymentIntentClientSecret?: string | null;
   setupIntentClientSecret?: string | null;
@@ -964,7 +972,7 @@ export class PaymentsService {
     };
   }
 
-  async handleMollieEvent(event: Record<string, unknown>) {
+  async handleMollieEvent(event: Record<string, unknown>): Promise<MollieWebhookProcessingResult | null> {
     const enrichedEvent = await this.enrichMollieEvent(event);
     this.logger.debug('===== PARSED EVENT (ENRICHED) =====');
     this.logger.debug(JSON.stringify(enrichedEvent, null, 2));
@@ -984,10 +992,20 @@ export class PaymentsService {
 
     const metadata = (enrichedEvent['metadata'] as Record<string, unknown> | undefined) ?? {};
 
+    const context: MollieWebhookProcessingResult = {
+      metadata: metadata && Object.keys(metadata).length > 0 ? metadata : null,
+    };
+    if (typeof metadata['providerId'] === 'string') {
+      context.providerProfileId = metadata['providerId'] as string;
+    }
+    if (typeof metadata['userId'] === 'string') {
+      context.userId = metadata['userId'] as string;
+    }
+
     if (isMandateEvent) {
       await this.recordPaymentEvent(PaymentProvider.MOLLIE, type, enrichedEvent);
-      await this.handleMollieMandateEvent(enrichedEvent);
-      return;
+      const mandateContext = await this.handleMollieMandateEvent(enrichedEvent);
+      return { ...context, ...mandateContext };
     }
 
     const status = this.normalizeMollieStatus(enrichedEvent, type);
@@ -1031,15 +1049,18 @@ export class PaymentsService {
     this.logger.debug(`Received Mollie webhook ${type}`);
 
     if (!paymentId || !status) {
-      return;
+      return context;
     }
 
     const payment = await this.prisma.payment.findUnique({
       where: { id: paymentId },
     });
     if (!payment) {
-      return;
+      return context;
     }
+    context.paymentId = payment.id;
+    context.bookingId = payment.bookingId;
+    context.userId = payment.clientId;
 
     if (status === 'paid') {
       const now = new Date();
@@ -1083,6 +1104,8 @@ export class PaymentsService {
         },
       });
     }
+
+    return context;
   }
 
 
@@ -1141,11 +1164,11 @@ export class PaymentsService {
     }
   }
 
-  private async handleMollieMandateEvent(event: Record<string, unknown>) {
+  private async handleMollieMandateEvent(event: Record<string, unknown>): Promise<{ userId?: string } | null> {
     const customerId = this.extractMollieCustomerId(event);
     const mandateId = typeof event['id'] === 'string' ? event['id'] : undefined;
     if (!customerId || !mandateId) {
-      return;
+      return null;
     }
     const profile = await this.prisma.clientProfile.findFirst({
       where: { externalCustomerId: customerId },
@@ -1153,7 +1176,7 @@ export class PaymentsService {
     });
     if (!profile) {
       this.logger.warn(`No client profile found for Mollie customer ${customerId}`);
-      return;
+      return null;
     }
     try {
       const mandate = await this.mollieService.getMandate(customerId, mandateId);
@@ -1166,7 +1189,9 @@ export class PaymentsService {
       this.logger.warn(
         `Unable to sync Mollie mandate ${mandateId}: ${error instanceof Error ? error.message : error}`
       );
+      return { userId: profile.userId };
     }
+    return { userId: profile.userId };
   }
 
   private async generatePayoutBatch(options: {

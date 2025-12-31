@@ -10,6 +10,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { MollieService } from './mollie.service';
 import { PricingModule } from '../pricing/pricing.module';
 import { BookingsModule } from '../bookings/bookings.module';
+import { SystemModule } from '../system/system.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { BookingsModule } from '../bookings/bookings.module';
     NotificationsModule,
     PricingModule,
     forwardRef(() => BookingsModule),
+    SystemModule,
   ],
   controllers: [PaymentsController, PaymentsWebhookController],
   providers: [PaymentsService, MollieService],

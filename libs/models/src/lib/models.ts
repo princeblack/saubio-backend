@@ -57,6 +57,30 @@ export type MarketingLandingStatus = 'draft' | 'published' | 'archived';
 
 export type ReviewStatus = 'published' | 'hidden' | 'flagged';
 
+export type SystemApiKeyStatus = 'active' | 'paused' | 'revoked';
+
+export type SystemDataJobStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
+export type SystemDataJobFormat = 'csv' | 'json';
+
+export type SystemImportEntity =
+  | 'users'
+  | 'providers'
+  | 'bookings'
+  | 'payments'
+  | 'zones'
+  | 'services'
+  | 'other';
+
+export type SystemExportType =
+  | 'bookings'
+  | 'payments'
+  | 'providers'
+  | 'clients'
+  | 'disputes'
+  | 'finance'
+  | 'other';
+
 export type CleaningSoilLevel = 'light' | 'normal' | 'strong' | 'extreme';
 
 export interface BookingContactDetails {
@@ -620,15 +644,36 @@ export type NotificationType =
   | 'booking_cancellation'
   | 'billing'
   | 'support_update'
-  | 'matching_progress';
+  | 'matching_progress'
+  | 'identity_verification';
 
 export type NotificationChannel = 'in_app' | 'email' | 'push';
+
+export type NotificationDeliveryStatus = 'pending' | 'sent' | 'delivered' | 'failed' | 'bounced';
+
+export type NotificationTemplateStatus = 'active' | 'disabled' | 'archived';
+
+export type NotificationAutomationEvent =
+  | 'booking_created'
+  | 'booking_confirmed'
+  | 'booking_completed'
+  | 'payment_failed'
+  | 'matching_progress'
+  | 'smart_match_triggered';
+
+export type NotificationAutomationAudience = 'client' | 'provider' | 'admin';
 
 export interface Notification extends BaseEntity {
   type: NotificationType;
   payload: Record<string, unknown>;
   readAt?: string | null;
   userId: string;
+  channel: NotificationChannel;
+  deliveryStatus: NotificationDeliveryStatus;
+  templateKey?: string | null;
+  bookingId?: string | null;
+  providerId?: string | null;
+  contextClientId?: string | null;
 }
 
 export interface NotificationPreference extends BaseEntity {
@@ -694,6 +739,8 @@ export interface NotificationRealtimeEvent {
   createdAt: string;
   notificationId?: string;
 }
+
+export type WebhookDeliveryStatus = 'received' | 'processing' | 'processed' | 'failed' | 'ignored';
 
 export interface ProfileSummary {
   id: string;

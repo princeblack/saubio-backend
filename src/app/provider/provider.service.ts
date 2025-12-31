@@ -29,6 +29,7 @@ import type {
   ProviderDirectoryItem,
   ProviderDirectoryDetails,
   ProviderIdentityDocumentSummary,
+  IdentityDocumentTypeConfig,
   ProviderAvailabilityOverview,
   ProviderEarningsResponse,
   ProviderEarningStatus,
@@ -74,6 +75,8 @@ import {
   PLATFORM_COMMISSION_VAT_RATE,
   NET_PROVIDER_SHARE_FACTOR,
 } from '../payments/payment.constants';
+import { IdentityDocumentTypesService } from '../identity/identity-document-types.service';
+import { IdentityAuditService } from '../identity/identity-audit.service';
 
 const SHORT_NOTICE_PLATFORM_FEE_CENTS = 300;
 const BOOKING_CLIENT_SELECT = {
@@ -195,7 +198,9 @@ export class ProviderService {
     private readonly configService: ConfigService<AppEnvironmentConfig>,
     private readonly emailQueue: EmailQueueService,
     private readonly notifications: NotificationsService,
-    private readonly postalCodes: PostalCodeService
+    private readonly postalCodes: PostalCodeService,
+    private readonly identityDocumentTypes: IdentityDocumentTypesService,
+    private readonly identityAudit: IdentityAuditService
   ) {}
 
   async listDirectoryProviders(filters: ProviderDirectoryDto): Promise<ProviderDirectoryItem[]> {
@@ -1284,6 +1289,9 @@ export class ProviderService {
       throw new ConflictException('IDENTITY_DOCUMENT_LIMIT_REACHED');
     }
 
+    const definition = await this.identityDocumentTypes.ensureAllowed(payload.documentType);
+    const normalizedType = definition.code;
+
     const document = await this.prisma.document.create({
       data: {
         type: DocumentType.IDENTITY,
@@ -1291,7 +1299,7 @@ export class ProviderService {
         name: payload.fileName?.trim() || `identity-${payload.documentType}-${Date.now()}`,
         metadata: {
           inline,
-          documentType: payload.documentType,
+          documentType: normalizedType,
           side: payload.side ?? null,
           uploadedVia: 'manual_upload',
         } as Prisma.JsonObject,
@@ -1312,8 +1320,23 @@ export class ProviderService {
     }
 
     void this.refreshOnboardingStatus(user.id);
+    await this.identityAudit.log({
+      providerId: profile.id,
+      documentId: document.id,
+      actorId: user.id,
+      actorLabel: `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email,
+      action: 'SUBMITTED',
+      payload: {
+        documentType: normalizedType,
+        side: payload.side ?? null,
+      },
+    });
 
     return this.mapIdentityDocument(document);
+  }
+
+  async listIdentityDocumentTypes(): Promise<IdentityDocumentTypeConfig[]> {
+    return this.identityDocumentTypes.listActive();
   }
 
   async uploadProfilePhoto(user: User, payload: UploadProfilePhotoDto): Promise<ProviderProfileModel> {

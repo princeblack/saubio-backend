@@ -1,4 +1,4 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { Inject, Injectable, Logger, UnauthorizedException, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
@@ -12,6 +12,7 @@ import { User } from '@saubio/models';
 import { RefreshTokensService } from './refresh-tokens.service';
 import { EmailQueueService } from '../notifications/email-queue.service';
 import type { AppEnvironmentConfig } from '../config/configuration';
+import { SecurityService } from '../security/security.service';
 
 interface AuthTokenPayload {
   sub: string;
@@ -38,6 +39,8 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly refreshTokensService: RefreshTokensService,
     private readonly emailQueue: EmailQueueService,
+    @Inject(forwardRef(() => SecurityService))
+    private readonly security: SecurityService,
   ) {
     const configured = Number(this.configService.get<number>('app.maxRefreshTokens'));
     this.maxRefreshTokens = Number.isFinite(configured) && configured > 0 ? configured : 5;
@@ -73,19 +76,51 @@ export class AuthService {
   }
 
   async login({ email, password }: LoginDto, request?: Request) {
-    const record = await this.usersService.findByEmailWithSensitiveData(email);
+    const ipAddress = this.extractIp(request);
+    const userAgent = request?.headers['user-agent'] as string | undefined;
+    const sanitizedEmail = email.toLowerCase();
+    const record = await this.usersService.findByEmailWithSensitiveData(sanitizedEmail);
 
     if (!record || !record.hashedPassword) {
+      await this.security.recordLoginAttempt({
+        email: sanitizedEmail,
+        success: false,
+        reason: 'INVALID_CREDENTIALS',
+        provider: 'password',
+        ipAddress,
+        userAgent,
+      });
       throw new UnauthorizedException('INVALID_CREDENTIALS');
     }
 
     const passwordMatches = await bcrypt.compare(password, record.hashedPassword);
 
     if (!passwordMatches) {
+      await this.security.recordLoginAttempt({
+        email: sanitizedEmail,
+        userId: record.id,
+        userRole: this.pickPrimaryRole(record.roles ?? []),
+        success: false,
+        reason: 'INVALID_CREDENTIALS',
+        provider: 'password',
+        ipAddress,
+        userAgent,
+      });
       throw new UnauthorizedException('INVALID_CREDENTIALS');
     }
 
     const user = await this.usersService.findOne(record.id);
+
+    await this.security.recordLoginAttempt({
+      email: user.email,
+      userId: user.id,
+      userRole: this.pickPrimaryRole(user.roles),
+      success: true,
+      reason: 'PASSWORD_LOGIN',
+      provider: 'password',
+      ipAddress,
+      userAgent,
+    });
 
     return this.issueTokens(user, { request });
   }
@@ -152,6 +187,7 @@ export class AuthService {
     if (!this.googleClient) {
       this.googleClient = new OAuth2Client(googleClientId);
     }
+    let attemptedEmail: string | undefined;
     try {
       const ticket = await this.googleClient.verifyIdToken({
         idToken: payload.idToken,
@@ -161,14 +197,36 @@ export class AuthService {
       if (!googlePayload?.email) {
         throw new UnauthorizedException('GOOGLE_EMAIL_REQUIRED');
       }
+      attemptedEmail = googlePayload.email;
       const profile = {
         email: googlePayload.email,
         firstName: googlePayload.given_name ?? googlePayload.email.split('@')[0],
         lastName: googlePayload.family_name ?? undefined,
         preferredLocale: this.normalizeLocale(googlePayload.locale),
       };
-      return this.handleOAuthLogin(profile, request);
+      const tokens = await this.handleOAuthLogin(profile, request);
+      await this.security.recordLoginAttempt({
+        email: profile.email,
+        userId: tokens.user.id,
+        userRole: this.pickPrimaryRole(tokens.user.roles),
+        success: true,
+        reason: 'GOOGLE_OAUTH',
+        provider: 'google',
+        ipAddress: this.extractIp(request),
+        userAgent: request?.headers['user-agent'] as string | undefined,
+      });
+      return tokens;
     } catch (error) {
+      if (attemptedEmail || payload?.idToken) {
+        await this.security.recordLoginAttempt({
+          email: attemptedEmail ?? 'unknown@google',
+          success: false,
+          reason: 'GOOGLE_AUTH_FAILED',
+          provider: 'google',
+          ipAddress: this.extractIp(request),
+          userAgent: request?.headers['user-agent'] as string | undefined,
+        });
+      }
       this.logger.warn(`Google OAuth failed: ${error instanceof Error ? error.message : error}`);
       throw new UnauthorizedException('GOOGLE_AUTH_FAILED');
     }
@@ -196,8 +254,27 @@ export class AuthService {
         lastName: applePayload?.family_name ?? undefined,
         preferredLocale: undefined,
       };
-      return this.handleOAuthLogin(profile, request);
+      const tokens = await this.handleOAuthLogin(profile, request);
+      await this.security.recordLoginAttempt({
+        email,
+        userId: tokens.user.id,
+        userRole: this.pickPrimaryRole(tokens.user.roles),
+        success: true,
+        reason: 'APPLE_OAUTH',
+        provider: 'apple',
+        ipAddress: this.extractIp(request),
+        userAgent: request?.headers['user-agent'] as string | undefined,
+      });
+      return tokens;
     } catch (error) {
+      await this.security.recordLoginAttempt({
+        email: payload.email ?? 'unknown@apple',
+        success: false,
+        reason: 'APPLE_AUTH_FAILED',
+        provider: 'apple',
+        ipAddress: this.extractIp(request),
+        userAgent: request?.headers['user-agent'] as string | undefined,
+      });
       this.logger.warn(`Apple OAuth failed: ${error instanceof Error ? error.message : error}`);
       throw new UnauthorizedException('APPLE_AUTH_FAILED');
     }
@@ -321,5 +398,14 @@ export class AuthService {
       return normalized;
     }
     return undefined;
+  }
+
+  private pickPrimaryRole(roles: readonly string[]): User['roles'][number] {
+    const normalized = roles.map((role) => role.toLowerCase()) as User['roles'][number][];
+    if (normalized.includes('admin')) return 'admin';
+    if (normalized.includes('employee')) return 'employee';
+    if (normalized.includes('provider')) return 'provider';
+    if (normalized.includes('company')) return 'company';
+    return normalized[0] ?? 'client';
   }
 }

@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { DigestFrequency } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -76,6 +77,7 @@ export class ProfileService {
       where: { id: userId },
       include: {
         preference: true,
+        consent: true,
       },
     });
     if (!user) {
@@ -129,6 +131,8 @@ export class ProfileService {
       });
     }
 
+    let marketingConsentChange: boolean | undefined;
+
     if (payload.preferences) {
       const existingPreference = user.preference;
       type PreferenceSnapshot = {
@@ -147,7 +151,7 @@ export class ProfileService {
       const applyPreferenceChange = <K extends keyof PreferenceSnapshot>(
         key: K,
         newValue: PreferenceSnapshot[K]
-      ) => {
+      ): boolean => {
         const previous = (existingPreference as PreferenceSnapshot | null)?.[key] ?? preferenceDefaults[key];
         if (newValue !== previous) {
           preferenceUpdateData[key] = newValue;
@@ -157,11 +161,16 @@ export class ProfileService {
             oldValue: previous === null || previous === undefined ? null : String(previous),
             newValue: newValue === null || newValue === undefined ? null : String(newValue),
           });
+          return true;
         }
+        return false;
       };
 
       if (payload.preferences.marketingEmails !== undefined) {
-        applyPreferenceChange('marketingEmails', payload.preferences.marketingEmails);
+        const changed = applyPreferenceChange('marketingEmails', payload.preferences.marketingEmails);
+        if (changed) {
+          marketingConsentChange = payload.preferences.marketingEmails;
+        }
       }
       if (payload.preferences.productUpdates !== undefined) {
         applyPreferenceChange('productUpdates', payload.preferences.productUpdates);
@@ -202,6 +211,16 @@ export class ProfileService {
 
       if (auditEntries.length) {
         await tx.userProfileAudit.createMany({ data: auditEntries });
+      }
+
+      if (marketingConsentChange !== undefined) {
+        const actorLabel = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email;
+        await this.recordConsentMutation(tx, {
+          userId,
+          consentMarketing: marketingConsentChange,
+          actorId: userId,
+          actorLabel,
+        });
       }
 
       const result = await tx.user.findUnique({
@@ -269,6 +288,52 @@ export class ProfileService {
     });
 
     return { success: true };
+  }
+
+  private async recordConsentMutation(
+    tx: Prisma.TransactionClient,
+    params: { userId: string; consentMarketing: boolean; actorId: string; actorLabel: string }
+  ) {
+    const now = new Date();
+    const existing = await tx.userConsent.findUnique({ where: { userId: params.userId } });
+    const snapshot = await tx.userConsent.upsert({
+      where: { userId: params.userId },
+      update: {
+        consentMarketing: params.consentMarketing,
+        capturedAt: now,
+        updatedAt: now,
+        source: 'account',
+        channel: 'dashboard',
+      },
+      create: {
+        userId: params.userId,
+        consentMarketing: params.consentMarketing,
+        consentStats: existing?.consentStats ?? false,
+        consentPreferences: existing?.consentPreferences ?? false,
+        consentNecessary: existing?.consentNecessary ?? true,
+        source: 'account',
+        channel: 'dashboard',
+        capturedAt: now,
+        firstCapturedAt: existing?.firstCapturedAt ?? now,
+      },
+    });
+
+    await tx.userConsentHistory.create({
+      data: {
+        consentId: snapshot.id,
+        userId: params.userId,
+        actorId: params.actorId,
+        actorLabel: params.actorLabel,
+        consentMarketing: params.consentMarketing,
+        consentStats: snapshot.consentStats,
+        consentPreferences: snapshot.consentPreferences,
+        consentNecessary: snapshot.consentNecessary,
+        source: 'account',
+        channel: 'dashboard',
+        capturedAt: now,
+        notes: 'Mise à jour via le profil utilisateur',
+      },
+    });
   }
 
   async getAudit(userId: string) {

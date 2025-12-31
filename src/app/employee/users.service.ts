@@ -544,6 +544,7 @@ export class EmployeeUsersService {
           updatedAt: true,
           isActive: true,
           hashedPassword: true,
+          roles: true,
           employeeProfiles: { select: { role: true }, take: 1 },
         },
       }),
@@ -554,81 +555,13 @@ export class EmployeeUsersService {
       name: this.formatUserName(user),
       email: user.email,
       role: user.employeeProfiles[0]?.role ?? 'Employee',
+      accessRole: (user.roles[0]?.toLowerCase() ?? 'employee') as UserRole,
       createdAt: user.createdAt.toISOString(),
       lastLoginAt: user.updatedAt?.toISOString() ?? null,
       status: this.deriveStatus(user),
     }));
 
     return this.buildPagination(items, total, page, pageSize);
-  }
-
-  async getRolesSummary(): Promise<AdminRolesResponse> {
-    const roles: Array<{ role: 'client' | 'provider' | 'employee' | 'admin'; description: string; permissions: string[] }> = [
-      {
-        role: 'client',
-        description: 'Peut créer des réservations et gérer son compte.',
-        permissions: ['bookings:create', 'bookings:view', 'profile:update'],
-      },
-      {
-        role: 'provider',
-        description: 'Gère les missions attribuées et son profil prestataire.',
-        permissions: ['missions:view', 'missions:update', 'payouts:view'],
-      },
-      {
-        role: 'employee',
-        description: 'Accès back-office limité selon l’équipe (support, opérations...).',
-        permissions: ['support:manage', 'matching:view', 'payouts:review'],
-      },
-      {
-        role: 'admin',
-        description: 'Accès complet à la console administrateur Saubio.',
-        permissions: ['*'],
-      },
-    ];
-
-    const roleCounts = await Promise.all(
-      roles.map((entry) =>
-        this.prisma.user.count({
-          where: { roles: { has: entry.role.toUpperCase() as PrismaUserRole } },
-        })
-      )
-    );
-
-    const summaries = roles.map((entry, index) => ({
-      role: entry.role,
-      description: entry.description,
-      permissions: entry.permissions,
-      userCount: roleCounts[index],
-    }));
-
-    const adminAccountsRaw = await this.prisma.user.findMany({
-      where: { roles: { has: 'ADMIN' } },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        createdAt: true,
-        updatedAt: true,
-        isActive: true,
-        hashedPassword: true,
-      },
-    });
-
-    const adminAccounts = adminAccountsRaw.map((user) => ({
-      id: user.id,
-      name: this.formatUserName(user),
-      email: user.email,
-      createdAt: user.createdAt.toISOString(),
-      lastLoginAt: user.updatedAt?.toISOString() ?? null,
-      status: this.deriveStatus(user),
-    }));
-
-    return {
-      roles: summaries,
-      adminAccounts,
-    };
   }
 
   private applyUserStatusFilter(where: Prisma.UserWhereInput, status?: string) {

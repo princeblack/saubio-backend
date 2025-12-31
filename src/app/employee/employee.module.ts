@@ -36,6 +36,14 @@ import { EmployeeMarketingService } from './marketing.service';
 import { EmployeeQualityController } from './quality.controller';
 import { EmployeeQualityService } from './quality.service';
 import { EmployeeSupportCenterService } from './support-center.service';
+import { EmployeeNotificationsController } from './notifications.controller';
+import { EmployeeNotificationsService } from './notifications.service';
+import { SystemModule } from '../system/system.module';
+import { EmployeeSystemController } from './system.controller';
+import { EmployeeSystemService } from './system.service';
+import { EmployeeAnalyticsController } from './analytics.controller';
+import { EmployeeAnalyticsService } from './analytics.service';
+import { SecurityModule } from '../security/security.module';
 
 @Module({
   imports: [
@@ -46,6 +54,8 @@ import { EmployeeSupportCenterService } from './support-center.service';
     PricingModule,
     GeocodingModule,
     MarketingModule,
+    SystemModule,
+    SecurityModule,
   ],
   controllers: [
     EmployeeDashboardController,
@@ -65,6 +75,9 @@ import { EmployeeSupportCenterService } from './support-center.service';
     EmployeeSmartMatchingController,
     EmployeeMarketingController,
     EmployeeQualityController,
+    EmployeeNotificationsController,
+    EmployeeSystemController,
+    EmployeeAnalyticsController,
   ],
   providers: [
     EmployeeDashboardService,
@@ -80,6 +93,9 @@ import { EmployeeSupportCenterService } from './support-center.service';
     EmployeeMarketingService,
     EmployeeQualityService,
     EmployeeSupportCenterService,
+    EmployeeNotificationsService,
+    EmployeeSystemService,
+    EmployeeAnalyticsService,
   ],
 })
 export class EmployeeModule {}

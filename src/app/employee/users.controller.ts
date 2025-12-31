@@ -18,6 +18,7 @@ import type {
   AdminRolesResponse,
 } from '@saubio/models';
 import { EmployeeUsersService } from './users.service';
+import { SecurityService } from '../security/security.service';
 
 @ApiTags('employee')
 @Controller('employee/users')
@@ -27,6 +28,7 @@ export class EmployeeUsersController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly usersService: EmployeeUsersService,
+    private readonly security: SecurityService,
   ) {}
 
   @Get()
@@ -178,6 +180,6 @@ export class EmployeeUsersController {
   @Get('roles')
   @ApiOperation({ summary: 'Roles & permissions overview' })
   async roles(): Promise<AdminRolesResponse> {
-    return this.usersService.getRolesSummary();
+    return this.security.getRolesOverview();
   }
 }

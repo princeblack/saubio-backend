@@ -196,6 +196,11 @@ export class ProviderController {
     return this.providerService.uploadIdentityDocument(user, payload);
   }
 
+  @Get('onboarding/identity/document-types')
+  listIdentityDocumentTypes() {
+    return this.providerService.listIdentityDocumentTypes();
+  }
+
   @Post('onboarding/welcome')
   completeWelcomeSession(@CurrentUser() user: User, @Body() payload: CompleteWelcomeSessionDto) {
     return this.providerService.completeWelcomeSession(user, payload);

@@ -19,6 +19,9 @@ import { OnfidoModule } from './onfido/onfido.module';
 import { PricingModule } from './pricing/pricing.module';
 import { DisputesModule } from './disputes/disputes.module';
 import { FollowUpModule } from './follow-up/follow-up.module';
+import { IdentityModule } from './identity/identity.module';
+import { ComplianceModule } from './compliance/compliance.module';
+import { SecurityModule } from './security/security.module';
 
 @Module({
   imports: [
@@ -40,6 +43,9 @@ import { FollowUpModule } from './follow-up/follow-up.module';
     DocumentsModule,
     OnfidoModule,
     FollowUpModule,
+    IdentityModule,
+    ComplianceModule,
+    SecurityModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -397,63 +397,7 @@ export class EmployeeMarketingService {
     return this.paginate(items, total, page, pageSize);
   }
 
-  private async ensureLandingPagesSeeded() {
-    const count = await this.prisma.marketingLandingPage.count();
-    if (count > 0) {
-      return;
-    }
-
-    await this.prisma.marketingLandingPage.createMany({
-      data: [
-        {
-          title: 'Ménage étudiant',
-          slug: 'menage-etudiant',
-          path: '/landing/etudiant',
-          status: 'PUBLISHED',
-          impressions: 1200,
-          conversions: 85,
-          leads: 60,
-          bounceRate: 0.38,
-          seoTitle: 'Ménage étudiant à Berlin',
-          seoDescription: 'Service flexible pour logements étudiants.',
-          heroTitle: 'Confiez votre appart étudiant',
-          heroDescription: 'Des pros qualifiés qui respectent votre budget.',
-        },
-        {
-          title: 'Nettoyage écologique',
-          slug: 'nettoyage-eco',
-          path: '/landing/eco',
-          status: 'PUBLISHED',
-          impressions: 950,
-          conversions: 72,
-          leads: 55,
-          bounceRate: 0.32,
-          seoTitle: 'Nettoyage écologique',
-          seoDescription: 'Produits 100 % bio et équipes formées.',
-          heroTitle: 'Optez pour le ménage Öko Plus',
-          heroDescription: 'Des prestations premium sans compromis sur la planète.',
-        },
-        {
-          title: 'Après fête',
-          slug: 'apres-fete',
-          path: '/landing/after-party',
-          status: 'DRAFT',
-          impressions: 0,
-          conversions: 0,
-          leads: 0,
-          bounceRate: null,
-          seoTitle: 'Nettoyage après soirée',
-          seoDescription: 'Remise en état express après vos évènements.',
-          heroTitle: 'Votre fête, notre mission',
-          heroDescription: 'Nous rangeons et désinfectons pendant que vous récupérez.',
-        },
-      ],
-      skipDuplicates: true,
-    });
-  }
-
   async getLandingPages(): Promise<AdminMarketingLandingPagesResponse> {
-    await this.ensureLandingPagesSeeded();
     const records = await this.prisma.marketingLandingPage.findMany({
       orderBy: { title: 'asc' },
     });
@@ -471,6 +415,10 @@ export class EmployeeMarketingService {
         leads: record.leads,
         conversionRate: record.impressions > 0 ? record.conversions / record.impressions : null,
         bounceRate: record.bounceRate ?? null,
+        seoTitle: record.seoTitle,
+        seoDescription: record.seoDescription,
+        heroTitle: record.heroTitle,
+        heroDescription: record.heroDescription,
         updatedAt: record.updatedAt.toISOString(),
       })),
     };

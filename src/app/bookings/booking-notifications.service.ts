@@ -47,6 +47,8 @@ export class BookingNotificationsService {
         ...options.payload,
       },
       dedupeKey: options.dedupeKey,
+      bookingId: options.booking.id,
+      contextClientId: options.booking.clientId ?? undefined,
     });
   }
 
@@ -90,6 +92,8 @@ export class BookingNotificationsService {
       providerTargets: options.providerTargets,
       extraUserIds: Array.from(mergedExtraRecipients),
       dedupeKey: resolvedDedupeKey,
+      // ensure parent emit receives booking context
+      // contextClientId is handled within notifyParticipants
     });
   }
 

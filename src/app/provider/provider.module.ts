@@ -10,9 +10,10 @@ import { ProviderCoverageController } from './provider-coverage.controller';
 import { SmsService } from './sms.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { GeocodingModule } from '../geocoding/geocoding.module';
+import { IdentityModule } from '../identity/identity.module';
 
 @Module({
-  imports: [AuthModule, BookingsModule, PaymentsModule, NotificationsModule, GeocodingModule],
+  imports: [AuthModule, BookingsModule, PaymentsModule, NotificationsModule, GeocodingModule, IdentityModule],
   controllers: [ProviderController, ProviderDirectoryController, ProviderCitiesController, ProviderCoverageController],
   providers: [ProviderService, SmsService],
 })

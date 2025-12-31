@@ -4,7 +4,7 @@ import { ListNotificationsDto } from './dto/list-notifications.dto';
 import { MarkManyNotificationsDto } from './dto/mark-many-notifications.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-preferences.dto';
 import type { Prisma } from '@prisma/client';
-import { NotificationType } from '@prisma/client';
+import { NotificationChannel, NotificationDeliveryStatus, NotificationType } from '@prisma/client';
 import type { Observable } from 'rxjs';
 import { MessageEvent } from '@nestjs/common';
 import { NotificationEventsService, NotificationRealtimeEvent } from './notification-events.service';
@@ -14,6 +14,12 @@ interface EmitNotificationPayload {
   type: NotificationType;
   payload: Record<string, unknown>;
   dedupeKey?: string;
+  channel?: NotificationChannel;
+  templateKey?: string;
+  bookingId?: string;
+  providerId?: string;
+  contextClientId?: string;
+  contextMetadata?: Prisma.InputJsonValue;
 }
 
 const NOTIFICATION_DEDUPE_FIELD = '__dedupeKey';
@@ -152,6 +158,13 @@ export class NotificationsService {
         userId,
         type: payload.type,
         payload: serializedPayload,
+        channel: payload.channel ?? NotificationChannel.IN_APP,
+        deliveryStatus: NotificationDeliveryStatus.PENDING,
+        templateKey: payload.templateKey,
+        bookingId: payload.bookingId,
+        providerId: payload.providerId,
+        contextClientId: payload.contextClientId,
+        contextMetadata: payload.contextMetadata,
       })),
     });
 

@@ -73,26 +73,4 @@ ALTER TABLE "MarketingSettingLog" ADD CONSTRAINT "MarketingSettingLog_userId_fke
 INSERT INTO "MarketingSetting" ("id") VALUES (1)
 ON CONFLICT ("id") DO NOTHING;
 
--- Seed a few default landing pages if table empty
-INSERT INTO "MarketingLandingPage" ("id", "title", "slug", "path", "status", "impressions", "conversions", "leads", "bounceRate", "seoTitle", "seoDescription", "heroTitle", "heroDescription")
-SELECT
-  concat('landing_', md5(random()::text || clock_timestamp()::text)),
-  data.title,
-  data.slug,
-  data.path,
-  data.status::"MarketingLandingStatus",
-  data.impressions,
-  data.conversions,
-  data.leads,
-  data.bounceRate,
-  data.seoTitle,
-  data.seoDescription,
-  data.heroTitle,
-  data.heroDescription
-FROM (
-  VALUES
-    ('Ménage étudiant', 'menage-etudiant', '/landing/etudiant', 'PUBLISHED', 1200, 85, 60, 0.38, 'Ménage étudiant à Berlin', 'Service flexible pour logements étudiants', 'Confiez votre appart étudiant', 'Des pros qualifiés qui respectent votre budget.'),
-    ('Nettoyage écologique', 'nettoyage-eco', '/landing/eco', 'PUBLISHED', 950, 72, 55, 0.32, 'Nettoyage écologique', 'Produits 100 % bio et équipes formées', 'Optez pour le ménage Öko Plus', 'Des prestations premium sans compromis sur la planète.'),
-    ('Après fête', 'apres-fete', '/landing/after-party', 'DRAFT', 0, 0, 0, NULL, 'Nettoyage après soirée', 'Remise en état express', 'Votre fête, notre mission', 'Nous rangeons et désinfectons pendant que vous récupérez.')
-) AS data(title, slug, path, status, impressions, conversions, leads, bounceRate, seoTitle, seoDescription, heroTitle, heroDescription)
-ON CONFLICT ("slug") DO NOTHING;
+-- Intentionally keep landing pages unseeded so CMS reflects only live content

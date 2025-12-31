@@ -114,6 +114,52 @@ enum PaymentProvider {
   OTHER
 }
 
+enum WebhookDeliveryStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  FAILED
+  IGNORED
+}
+
+enum SystemApiKeyStatus {
+  ACTIVE
+  PAUSED
+  REVOKED
+}
+
+enum DataJobFormat {
+  CSV
+  JSON
+}
+
+enum DataJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum DataImportEntity {
+  USERS
+  PROVIDERS
+  BOOKINGS
+  PAYMENTS
+  ZONES
+  SERVICES
+  OTHER
+}
+
+enum DataExportType {
+  BOOKINGS
+  PAYMENTS
+  PROVIDERS
+  CLIENTS
+  DISPUTES
+  FINANCE
+  OTHER
+}
+
 enum EmailQueueStatus {
   PENDING
   SENT
@@ -257,6 +303,24 @@ model User {
   reviewsModerated        Review[]                @relation("ReviewModeratedBy")
   marketingSettingsUpdated MarketingSetting[]     @relation("MarketingSettingUpdatedBy")
   marketingSettingLogs    MarketingSettingLog[]
+  gdprRequests            GdprRequest[]
+  gdprRequestsStarted     GdprRequest[]           @relation("GdprRequestStartedBy")
+  gdprRequestsProcessed   GdprRequest[]           @relation("GdprRequestProcessedBy")
+  gdprRequestsRejected    GdprRequest[]           @relation("GdprRequestRejectedBy")
+  consent                 UserConsent?
+  consentHistory          UserConsentHistory[]    @relation("UserConsentSubject")
+  consentHistoryActor     UserConsentHistory[]    @relation("UserConsentActor")
+  loginAttempts           LoginAttempt[]
+  identityVerificationReviews ProviderProfile[] @relation("IdentityVerificationReviewer")
+  securityIncidentsAssigned SecurityIncident[] @relation("SecurityIncidentAssigned")
+  securityIncidentsResolved SecurityIncident[] @relation("SecurityIncidentResolvedBy")
+  securityIncidentTimelineEntries SecurityIncidentTimeline[] @relation("SecurityIncidentTimelineActor")
+  identityAuditLogs       IdentityAuditLog[]      @relation("IdentityAuditActor")
+  gdprRequestAuditEntries GdprRequestAudit[]      @relation("GdprRequestAuditActor")
+  webhookEvents           WebhookEventLog[]       @relation("UserWebhookEvents")
+  apiKeysOwned            SystemApiKey[]          @relation("UserApiKeys")
+  dataImportsCreated      DataImportJob[]         @relation("DataImportJobCreatedBy")
+  dataExportsRequested    DataExportJob[]         @relation("DataExportJobRequestedBy")
 }
 
 model ProviderProfile {
@@ -313,6 +377,8 @@ model ProviderProfile {
   identityVerifiedAt DateTime?
   identityVerificationStatus IdentityVerificationStatus @default(NOT_STARTED)
   identityVerificationReviewer String?
+  identityVerificationReviewerUser User? @relation("IdentityVerificationReviewer", fields: [identityVerificationReviewerId], references: [id])
+  identityVerificationReviewerId String?
   identityVerificationReviewedAt DateTime?
   identityVerificationNotes String?
   onfidoApplicantId String?
@@ -330,6 +396,9 @@ model ProviderProfile {
   teamMemberships ProviderTeamMember[]
   bookingLocks BookingTeamLock[]
   invitations BookingInvitation[]
+  notifications Notification[]  @relation("ProviderNotification")
+  identityAuditLogs IdentityAuditLog[] @relation("ProviderIdentityAuditLogs")
+  webhookEvents   WebhookEventLog[]    @relation("ProviderWebhookEvents")
 }
 
 model PayoutBatch {
@@ -506,13 +575,24 @@ model SupportAttachment {
 }
 
 model Notification {
-  id        String           @id @default(cuid())
-  createdAt DateTime         @default(now())
-  readAt    DateTime?
-  type      NotificationType
-  payload   Json
-  user      User             @relation(fields: [userId], references: [id])
-  userId    String
+  id              String                        @id @default(cuid())
+  createdAt       DateTime                      @default(now())
+  readAt          DateTime?
+  type            NotificationType
+  channel         NotificationChannel           @default(IN_APP)
+  deliveryStatus  NotificationDeliveryStatus    @default(PENDING)
+  templateKey     String?
+  payload         Json
+  user            User                          @relation(fields: [userId], references: [id])
+  userId          String
+  booking         Booking?                      @relation(fields: [bookingId], references: [id])
+  bookingId       String?
+  provider        ProviderProfile?              @relation("ProviderNotification", fields: [providerId], references: [id])
+  providerId      String?
+  contextClientId String?
+  contextMetadata Json?
+  errorCode       String?
+  errorMessage    String?
 }
 
 model NotificationPreference {
@@ -522,6 +602,38 @@ model NotificationPreference {
   channels   NotificationChannel[] @default([IN_APP])
   language   String?
   mutedTypes NotificationType[]
+}
+
+model NotificationTemplate {
+  id                String                     @id @default(cuid())
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+  key               String                     @unique
+  name              String
+  description       String?
+  status            NotificationTemplateStatus @default(ACTIVE)
+  supportedChannels NotificationChannel[]      @default([IN_APP, EMAIL])
+  activeChannels    NotificationChannel[]      @default([IN_APP, EMAIL])
+  locales           String[]                @default([])
+  metadata          Json?
+  rules             NotificationAutomationRule[]
+}
+
+model NotificationAutomationRule {
+  id           String                         @id @default(cuid())
+  createdAt    DateTime                       @default(now())
+  updatedAt    DateTime                       @updatedAt
+  key          String                         @unique
+  name         String
+  description  String?
+  event        NotificationAutomationEvent
+  audience     NotificationAutomationAudience @default(CLIENT)
+  channels     NotificationChannel[]          @default([IN_APP])
+  delaySeconds Int?
+  isActive     Boolean                        @default(true)
+  conditions   Json?
+  template     NotificationTemplate?          @relation(fields: [templateId], references: [id])
+  templateId   String?
 }
 
 model UserProfileAudit {
@@ -564,6 +676,8 @@ enum NotificationType {
   BILLING
   SUPPORT_UPDATE
   MATCHING_PROGRESS
+  IDENTITY_VERIFICATION
+  COMPLIANCE
 }
 
 enum NotificationChannel {
@@ -572,10 +686,100 @@ enum NotificationChannel {
   PUSH
 }
 
+enum NotificationDeliveryStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+  BOUNCED
+}
+
+enum NotificationTemplateStatus {
+  ACTIVE
+  DISABLED
+  ARCHIVED
+}
+
+enum NotificationAutomationEvent {
+  BOOKING_CREATED
+  BOOKING_CONFIRMED
+  BOOKING_COMPLETED
+  PAYMENT_FAILED
+  MATCHING_PROGRESS
+  SMART_MATCH_TRIGGERED
+}
+
+enum NotificationAutomationAudience {
+  CLIENT
+  PROVIDER
+  ADMIN
+}
+
+enum IdentityAuditAction {
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  RESET
+  REQUESTED_DOCUMENT
+  NOTE
+}
+
+enum GdprRequestType {
+  EXPORT
+  DELETION
+  RECTIFICATION
+}
+
+enum GdprRequestStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  REJECTED
+}
+
 enum DigestFrequency {
   NEVER
   DAILY
   WEEKLY
+}
+
+enum SecurityIncidentStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum SecurityIncidentCategory {
+  AUTH
+  PERMISSIONS
+  WEBHOOK
+  PAYMENT
+  ADMIN
+  OTHER
+}
+
+enum SecurityIncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum SecurityLogCategory {
+  AUTH
+  PERMISSIONS
+  WEBHOOK
+  PAYMENT
+  ADMIN
+  OTHER
+}
+
+enum SecurityLogLevel {
+  INFO
+  WARN
+  ERROR
 }
 
 model UserPreference {
@@ -588,6 +792,109 @@ model UserPreference {
   digestFrequency  DigestFrequency  @default(WEEKLY)
   user             User             @relation(fields: [userId], references: [id])
   userId           String           @unique
+}
+
+model UserConsent {
+  id                 String                @id @default(cuid())
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  user               User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId             String                @unique
+  consentMarketing   Boolean               @default(false)
+  consentStats       Boolean               @default(false)
+  consentPreferences Boolean               @default(false)
+  consentNecessary   Boolean               @default(true)
+  source             String?
+  channel            String?
+  capturedAt         DateTime?
+  firstCapturedAt    DateTime?
+
+  history UserConsentHistory[]
+}
+
+model UserConsentHistory {
+  id                 String    @id @default(cuid())
+  createdAt          DateTime  @default(now())
+  consent            UserConsent @relation(fields: [consentId], references: [id], onDelete: Cascade)
+  consentId          String
+  user               User      @relation("UserConsentSubject", fields: [userId], references: [id], onDelete: Cascade)
+  userId             String
+  actor              User?     @relation("UserConsentActor", fields: [actorId], references: [id])
+  actorId            String?
+  actorLabel         String?
+  consentMarketing   Boolean
+  consentStats       Boolean
+  consentPreferences Boolean
+  consentNecessary   Boolean
+  source             String?
+  channel            String?
+  ipAddress          String?
+  userAgent          String?
+  notes              String?
+  capturedAt         DateTime?
+
+  @@index([userId])
+  @@index([actorId])
+}
+
+model LoginAttempt {
+  id         String    @id @default(cuid())
+  createdAt  DateTime  @default(now())
+  email      String
+  user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId     String?
+  userRole   UserRole?
+  provider   String?   /// login provider (password, google, apple, etc.)
+  success    Boolean
+  reason     String?
+  ipAddress  String?
+  userAgent  String?
+
+  @@index([email])
+  @@index([createdAt])
+  @@index([userId])
+}
+
+model SecurityIncident {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  title       String
+  description String
+  status      SecurityIncidentStatus @default(OPEN)
+  category    SecurityIncidentCategory @default(OTHER)
+  severity    SecurityIncidentSeverity @default(MEDIUM)
+  assignedTo  User?    @relation("SecurityIncidentAssigned", fields: [assignedToId], references: [id], onDelete: SetNull)
+  assignedToId String?
+  resolvedAt  DateTime?
+  resolvedBy  User?    @relation("SecurityIncidentResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolvedById String?
+  timeline    SecurityIncidentTimeline[]
+}
+
+model SecurityIncidentTimeline {
+  id          String            @id @default(cuid())
+  createdAt   DateTime          @default(now())
+  incident    SecurityIncident  @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  incidentId  String
+  actor       User?             @relation("SecurityIncidentTimelineActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorId     String?
+  actorLabel  String?
+  action      String
+  message     String?
+  metadata    Json?
+}
+
+model SecurityLog {
+  id         String             @id @default(cuid())
+  createdAt  DateTime           @default(now())
+  category   SecurityLogCategory @default(OTHER)
+  level      SecurityLogLevel    @default(INFO)
+  message    String
+  requestId  String?
+  actorId    String?
+  actorEmail String?
+  metadata   Json?
 }
 
 model Document {
@@ -613,6 +920,79 @@ model Document {
   reviewer     User?            @relation("DocumentReviewer", fields: [reviewerId], references: [id])
   reviewerId   String?
   adminReviews AdminReview[]
+  identityAuditLogs IdentityAuditLog[] @relation("DocumentIdentityAuditLogs")
+}
+
+model IdentityDocumentType {
+  id                 String   @id @default(cuid())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  code               String   @unique
+  labelFr            String
+  labelEn            String?
+  labelDe            String?
+  description        String?
+  isRequired         Boolean  @default(true)
+  requiredFiles      Int      @default(1)
+  applicableCountries String[] @default([])
+  isActive           Boolean  @default(true)
+  archivedAt         DateTime?
+  metadata           Json?
+}
+
+model IdentityAuditLog {
+  id         String              @id @default(cuid())
+  createdAt  DateTime            @default(now())
+  provider   ProviderProfile     @relation("ProviderIdentityAuditLogs", fields: [providerId], references: [id])
+  providerId String
+  document   Document?           @relation("DocumentIdentityAuditLogs", fields: [documentId], references: [id])
+  documentId String?
+  actor      User?               @relation("IdentityAuditActor", fields: [actorId], references: [id])
+  actorId    String?
+  actorLabel String?
+  action     IdentityAuditAction
+  payload    Json?
+}
+
+model GdprRequest {
+  id             String            @id @default(cuid())
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  type           GdprRequestType
+  status         GdprRequestStatus @default(PENDING)
+  user           User              @relation(fields: [userId], references: [id])
+  userId         String
+  userRole       UserRole
+  userEmail      String
+  reason         String?
+  startedAt      DateTime?
+  startedById    String?
+  startedBy      User?             @relation("GdprRequestStartedBy", fields: [startedById], references: [id])
+  processedAt    DateTime?
+  processedById  String?
+  processedBy    User?             @relation("GdprRequestProcessedBy", fields: [processedById], references: [id])
+  rejectedAt     DateTime?
+  rejectedById   String?
+  rejectedBy     User?             @relation("GdprRequestRejectedBy", fields: [rejectedById], references: [id])
+  rejectReason   String?
+  exportPath     String?
+  exportReadyAt  DateTime?
+  exportExpiresAt DateTime?
+  metadata       Json?
+
+  auditLogs      GdprRequestAudit[]
+}
+
+model GdprRequestAudit {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+  request    GdprRequest @relation(fields: [requestId], references: [id])
+  requestId  String
+  action     String
+  actor      User?    @relation("GdprRequestAuditActor", fields: [actorId], references: [id])
+  actorId    String?
+  actorLabel String?
+  metadata   Json?
 }
 
 model AdminReview {
@@ -712,6 +1092,8 @@ model Booking {
   disputes    Dispute[]
   invitations BookingInvitation[]
   promoCodeUsages PromoCodeUsage[]
+  notifications Notification[]
+  webhookEvents WebhookEventLog[] @relation("BookingWebhookEvents")
   shortNotice Boolean          @default(false)
   leadTimeDays Int?
   shortNoticeDepositCents Int?
@@ -808,6 +1190,7 @@ model Payment {
   invoice       Invoice?
   loyaltyTransactions LoyaltyTransaction[]
   disputes      Dispute[]
+  webhookEvents WebhookEventLog[] @relation("PaymentWebhookEvents")
 
   @@unique([bookingId])
 }
@@ -867,6 +1250,97 @@ model PaymentEvent {
   payload   Json
 
   @@index([paymentId])
+}
+
+model WebhookEventLog {
+  id                String                 @id @default(cuid())
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  provider          String
+  eventId           String?
+  eventType         String?
+  resourceId        String?
+  status            WebhookDeliveryStatus  @default(RECEIVED)
+  receivedAt        DateTime               @default(now())
+  processedAt       DateTime?
+  processingLatencyMs Int?
+  requestUrl        String?
+  signatureValid    Boolean?
+  errorMessage      String?
+  headers           Json?
+  payload           Json?
+  metadata          Json?
+  bookingId         String?
+  booking           Booking?               @relation("BookingWebhookEvents", fields: [bookingId], references: [id])
+  paymentId         String?
+  payment           Payment?               @relation("PaymentWebhookEvents", fields: [paymentId], references: [id])
+  providerProfileId String?
+  providerProfile   ProviderProfile?       @relation("ProviderWebhookEvents", fields: [providerProfileId], references: [id])
+  userId            String?
+  user              User?                  @relation("UserWebhookEvents", fields: [userId], references: [id])
+  replayAttemptedAt DateTime?
+  replayStatus      WebhookDeliveryStatus?
+  replayError       String?
+
+  @@index([provider, receivedAt])
+  @@index([status, receivedAt])
+  @@index([bookingId])
+  @@index([paymentId])
+  @@index([providerProfileId])
+  @@index([userId])
+}
+
+model SystemApiKey {
+  id              String             @id @default(cuid())
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  name            String
+  description     String?
+  prefix          String             @unique
+  tokenHash       String
+  scopes          String[]           @default([])
+  status          SystemApiKeyStatus @default(ACTIVE)
+  rateLimitPerDay Int?
+  lastUsedAt      DateTime?
+  owner           User?              @relation("UserApiKeys", fields: [ownerId], references: [id], onDelete: SetNull)
+  ownerId         String?
+}
+
+model DataImportJob {
+  id             String           @id @default(cuid())
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  label          String
+  entity         DataImportEntity
+  format         DataJobFormat
+  status         DataJobStatus    @default(PENDING)
+  processedCount Int              @default(0)
+  totalCount     Int?
+  sourceFilename String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  errorMessage   String?
+  metadata       Json?
+  createdBy      User?            @relation("DataImportJobCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById    String?
+}
+
+model DataExportJob {
+  id            String        @id @default(cuid())
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  label         String
+  type          DataExportType
+  format        DataJobFormat
+  status        DataJobStatus @default(PENDING)
+  recordCount   Int?
+  fileUrl       String?
+  expiresAt     DateTime?
+  completedAt   DateTime?
+  errorMessage  String?
+  parameters    Json?
+  requestedBy   User?         @relation("DataExportJobRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  requestedById String?
 }
 
 model PromoCode {

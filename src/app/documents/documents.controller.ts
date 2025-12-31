@@ -1,5 +1,6 @@
 import { Controller, Get, Param, UseGuards, NotFoundException, ForbiddenException, StreamableFile } from '@nestjs/common';
 import { createReadStream, existsSync } from 'fs';
+import { extname } from 'path';
 import { Prisma } from '@prisma/client';
 import type { User } from '@saubio/models';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -38,9 +39,10 @@ export class DocumentsController {
     }
 
     const stream = createReadStream(filePath);
+    const mimeType = this.resolveMimeType(document);
     return new StreamableFile(stream, {
-      disposition: `inline; filename="${document.name ?? 'document.pdf'}"`,
-      type: 'application/pdf',
+      disposition: `inline; filename="${document.name ?? 'document'}"`,
+      type: mimeType,
     });
   }
 
@@ -72,5 +74,23 @@ export class DocumentsController {
       }
     }
     return fallback;
+  }
+
+  private resolveMimeType(document: { metadata: Prisma.JsonValue | null; name?: string | null; url: string }) {
+    if (document.metadata && typeof document.metadata === 'object') {
+      const meta = document.metadata as Record<string, unknown>;
+      const metaType = meta['mimeType'];
+      if (typeof metaType === 'string') {
+        return metaType;
+      }
+    }
+    const source = document.name ?? document.url;
+    const extension = extname(source).toLowerCase();
+    if (extension === '.png') return 'image/png';
+    if (extension === '.jpg' || extension === '.jpeg') return 'image/jpeg';
+    if (extension === '.webp') return 'image/webp';
+    if (extension === '.gif') return 'image/gif';
+    if (extension === '.pdf') return 'application/pdf';
+    return 'application/octet-stream';
   }
 }
