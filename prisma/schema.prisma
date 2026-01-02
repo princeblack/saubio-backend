@@ -256,6 +256,29 @@ enum MarketingLandingStatus {
   ARCHIVED
 }
 
+enum MarketingCampaignChannel {
+  EMAIL
+  PUSH
+  IN_APP
+  SMS
+}
+
+enum MarketingCampaignStatus {
+  DRAFT
+  SCHEDULED
+  RUNNING
+  COMPLETED
+  PAUSED
+}
+
+enum ReferralStatus {
+  INVITED
+  SIGNED_UP
+  BOOKED
+  REWARDED
+  PENDING_PAYOUT
+}
+
 /// --- MODELS ---
 
 /// --- MODELS ---
@@ -303,6 +326,9 @@ model User {
   reviewsModerated        Review[]                @relation("ReviewModeratedBy")
   marketingSettingsUpdated MarketingSetting[]     @relation("MarketingSettingUpdatedBy")
   marketingSettingLogs    MarketingSettingLog[]
+  marketingCampaignsCreated MarketingCampaign[]  @relation("MarketingCampaignCreatedBy")
+  referralInvitesSent     ReferralInvite[]        @relation("ReferralReferrer")
+  referralInvitesReceived ReferralInvite[]        @relation("ReferralReferred")
   gdprRequests            GdprRequest[]
   gdprRequestsStarted     GdprRequest[]           @relation("GdprRequestStartedBy")
   gdprRequestsProcessed   GdprRequest[]           @relation("GdprRequestProcessedBy")
@@ -1094,6 +1120,7 @@ model Booking {
   promoCodeUsages PromoCodeUsage[]
   notifications Notification[]
   webhookEvents WebhookEventLog[] @relation("BookingWebhookEvents")
+  referralInvites ReferralInvite[]
   shortNotice Boolean          @default(false)
   leadTimeDays Int?
   shortNoticeDepositCents Int?
@@ -1718,6 +1745,26 @@ model PostalFollowUpRequest {
   @@unique([email, normalizedPostalCode])
 }
 
+model MarketingCampaign {
+  id              String                  @id @default(cuid())
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  name            String
+  channel         MarketingCampaignChannel
+  status          MarketingCampaignStatus @default(DRAFT)
+  targetAudience  String?
+  scheduledAt     DateTime?
+  completedAt     DateTime?
+  sendCount       Int                     @default(0)
+  openRate        Float?
+  clickRate       Float?
+  conversionRate  Float?
+  revenueCents    Int?
+  notes           String?
+  createdBy       User?                   @relation("MarketingCampaignCreatedBy", fields: [createdById], references: [id])
+  createdById     String?
+}
+
 model MarketingLandingPage {
   id              String                 @id @default(cuid())
   createdAt       DateTime               @default(now())
@@ -1761,4 +1808,25 @@ model MarketingSettingLog {
   settingId   Int
   user        User?    @relation(fields: [userId], references: [id])
   userId      String?
+}
+
+model ReferralInvite {
+  id                   String         @id @default(cuid())
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  referralCode         String
+  status               ReferralStatus @default(INVITED)
+  referrer             User           @relation("ReferralReferrer", fields: [referrerId], references: [id])
+  referrerId           String
+  referredEmail        String
+  referredUser         User?          @relation("ReferralReferred", fields: [referredUserId], references: [id])
+  referredUserId       String?
+  booking              Booking?       @relation(fields: [bookingId], references: [id])
+  bookingId            String?
+  rewardReferrerCents  Int            @default(0)
+  rewardReferredCents  Int            @default(0)
+  notes                String?
+
+  @@index([referrerId])
+  @@index([referralCode])
 }

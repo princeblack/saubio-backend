@@ -13,6 +13,9 @@ import {
 
 const PROMO_TYPES = ['fixed', 'percent'] as const;
 const PROMO_STATUSES = ['active', 'inactive', 'scheduled', 'expired'] as const;
+const CAMPAIGN_STATUSES = ['draft', 'scheduled', 'running', 'completed', 'paused'] as const;
+const CAMPAIGN_CHANNELS = ['email', 'push', 'in_app', 'sms'] as const;
+const REFERRAL_STATUSES = ['invited', 'signed_up', 'booked', 'rewarded', 'pending_payout'] as const;
 
 export class MarketingRangeQueryDto {
   @IsOptional()
@@ -125,4 +128,44 @@ export class PromoCodeMutationDto {
 export class PromoCodeStatusDto {
   @IsBoolean()
   isActive!: boolean;
+}
+
+export class MarketingCampaignQueryDto extends MarketingRangeQueryDto {
+  @IsOptional()
+  @IsIn(CAMPAIGN_STATUSES)
+  status?: (typeof CAMPAIGN_STATUSES)[number];
+
+  @IsOptional()
+  @IsIn(CAMPAIGN_CHANNELS)
+  channel?: (typeof CAMPAIGN_CHANNELS)[number];
+
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @IsOptional()
+  @IsNumberString()
+  page?: string;
+
+  @IsOptional()
+  @IsNumberString()
+  pageSize?: string;
+}
+
+export class ReferralListQueryDto {
+  @IsOptional()
+  @IsIn(REFERRAL_STATUSES)
+  status?: (typeof REFERRAL_STATUSES)[number];
+
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @IsOptional()
+  @IsNumberString()
+  page?: string;
+
+  @IsOptional()
+  @IsNumberString()
+  pageSize?: string;
 }

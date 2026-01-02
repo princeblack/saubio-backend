@@ -27,7 +27,7 @@ import {
 @ApiTags('employee')
 @Controller('employee/support-center')
 @UseGuards(AccessTokenGuard, RolesGuard)
-@Roles('employee')
+@Roles('employee', 'admin')
 export class EmployeeSupportCenterController {
   constructor(private readonly service: EmployeeSupportCenterService) {}
 

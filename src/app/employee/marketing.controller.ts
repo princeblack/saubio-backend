@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type {
+  AdminMarketingCampaign,
   AdminMarketingLandingPagesResponse,
   AdminMarketingOverviewResponse,
   AdminMarketingSettingsResponse,
@@ -9,6 +10,7 @@ import type {
   AdminPromoCodeListItem,
   AdminPromoCodeStatsResponse,
   AdminPromoCodeUsageRecord,
+  AdminReferralRecord,
   User,
 } from '@saubio/models';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -16,11 +18,13 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { AccessTokenGuard } from '../auth/guards/access-token.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import {
+  MarketingCampaignQueryDto,
   MarketingRangeQueryDto,
   PromoCodeListQueryDto,
   PromoCodeMutationDto,
   PromoCodeStatusDto,
   PromoCodeUsageQueryDto,
+  ReferralListQueryDto,
 } from './dto/admin-marketing.dto';
 import { EmployeeMarketingService } from './marketing.service';
 
@@ -35,6 +39,14 @@ export class EmployeeMarketingController {
   @ApiOperation({ summary: 'Marketing KPIs' })
   async overview(@Query() query: MarketingRangeQueryDto): Promise<AdminMarketingOverviewResponse> {
     return this.marketingService.getOverview(query);
+  }
+
+  @Get('campaigns')
+  @ApiOperation({ summary: 'Liste des campagnes marketing' })
+  async campaigns(
+    @Query() query: MarketingCampaignQueryDto
+  ): Promise<AdminPaginatedResponse<AdminMarketingCampaign>> {
+    return this.marketingService.listCampaigns(query);
   }
 
   @Get('promo-codes')
@@ -96,6 +108,14 @@ export class EmployeeMarketingController {
     @Query() query: PromoCodeUsageQueryDto
   ): Promise<AdminPaginatedResponse<AdminPromoCodeUsageRecord>> {
     return this.marketingService.listPromoCodeUsages(id, query);
+  }
+
+  @Get('referrals')
+  @ApiOperation({ summary: 'Liste des invitations de parrainage' })
+  async referrals(
+    @Query() query: ReferralListQueryDto
+  ): Promise<AdminPaginatedResponse<AdminReferralRecord>> {
+    return this.marketingService.listReferralInvites(query);
   }
 
   @Get('landing')

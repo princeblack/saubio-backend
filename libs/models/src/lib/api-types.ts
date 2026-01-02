@@ -1754,6 +1754,59 @@ export interface AdminMarketingSettingsResponse {
   }>;
 }
 
+export type MarketingCampaignStatus = 'draft' | 'scheduled' | 'running' | 'completed' | 'paused';
+export type MarketingCampaignChannel = 'email' | 'push' | 'in_app' | 'sms';
+
+export interface AdminMarketingCampaign {
+  id: string;
+  name: string;
+  channel: MarketingCampaignChannel;
+  status: MarketingCampaignStatus;
+  targetAudience?: string | null;
+  scheduledAt?: string | null;
+  completedAt?: string | null;
+  sendCount: number;
+  openRate?: number | null;
+  clickRate?: number | null;
+  conversionRate?: number | null;
+  revenueCents?: number | null;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminMarketingCampaignListResponse extends AdminPaginatedResponse<AdminMarketingCampaign> {}
+
+export type ReferralStatus =
+  | 'invited'
+  | 'signed_up'
+  | 'booked'
+  | 'rewarded'
+  | 'pending_payout';
+
+export interface AdminReferralInvitee {
+  id: string;
+  name?: string | null;
+  email: string;
+  status: ReferralStatus;
+  bookingId?: string | null;
+  rewardReferredCents: number;
+}
+
+export interface AdminReferralRecord {
+  id: string;
+  code: string;
+  referrer: { id: string; name: string; email: string };
+  invites: AdminReferralInvitee[];
+  rewardReferrerCents: number;
+  totalRewardedCents: number;
+  status: ReferralStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminReferralListResponse extends AdminPaginatedResponse<AdminReferralRecord> {}
+
 export type AdminSystemStatus = 'ok' | 'degraded' | 'down';
 
 export interface AdminSystemHealthCheck {

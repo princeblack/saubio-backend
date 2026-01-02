@@ -1,6 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
 import type {
+  MarketingCampaignChannel as PrismaMarketingCampaignChannel,
+  MarketingCampaignStatus as PrismaMarketingCampaignStatus,
+  Prisma,
+  ReferralStatus as PrismaReferralStatus,
+} from '@prisma/client';
+import type {
+  AdminMarketingCampaign,
+  AdminMarketingCampaignListResponse,
   AdminMarketingLandingPagesResponse,
   AdminMarketingOverviewResponse,
   AdminMarketingSettingsResponse,
@@ -9,6 +16,8 @@ import type {
   AdminPromoCodeListItem,
   AdminPromoCodeStatsResponse,
   AdminPromoCodeUsageRecord,
+  AdminReferralListResponse,
+  AdminReferralRecord,
   BookingStatus,
   MarketingLandingStatus,
 } from '@saubio/models';
@@ -16,14 +25,27 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PromoCodeService } from '../marketing/promo-code.service';
 import {
   MarketingRangeQueryDto,
+  MarketingCampaignQueryDto,
   PromoCodeListQueryDto,
   PromoCodeMutationDto,
   PromoCodeUsageQueryDto,
+  ReferralListQueryDto,
 } from './dto/admin-marketing.dto';
 
 const DEFAULT_PAGE_SIZE = 20;
 const DEFAULT_RANGE_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+type ReferralInviteWithRelations = Prisma.ReferralInviteGetPayload<{
+  include: {
+    referrer: { select: { id: true; firstName: true; lastName: true; email: true } };
+    referredUser: { select: { id: true; firstName: true; lastName: true; email: true } };
+    booking: { select: { id: true } };
+  };
+}>;
+
+type ReferralRecordAccumulator = AdminReferralRecord & { _priority: number };
+type MarketingCampaignRecord = Prisma.MarketingCampaignGetPayload<{}>;
 
 @Injectable()
 export class EmployeeMarketingService {
@@ -487,6 +509,121 @@ export class EmployeeMarketingService {
     };
   }
 
+  async listCampaigns(query: MarketingCampaignQueryDto): Promise<AdminPaginatedResponse<AdminMarketingCampaign>> {
+    const page = Math.max(1, this.toNumber(query.page, 1));
+    const pageSize = Math.max(1, Math.min(100, this.toNumber(query.pageSize, DEFAULT_PAGE_SIZE)));
+    const where: Prisma.MarketingCampaignWhereInput = {};
+
+    if (query.status) {
+      where.status = this.parseCampaignStatus(query.status);
+    }
+    if (query.channel) {
+      where.channel = this.parseCampaignChannel(query.channel);
+    }
+    if (query.search) {
+      where.OR = [
+        { name: { contains: query.search, mode: 'insensitive' } },
+        { targetAudience: { contains: query.search, mode: 'insensitive' } },
+      ];
+    }
+    if (query.from || query.to) {
+      where.createdAt = {
+        gte: query.from ? new Date(query.from) : undefined,
+        lte: query.to ? new Date(query.to) : undefined,
+      };
+    }
+
+    const [total, campaigns] = await Promise.all([
+      this.prisma.marketingCampaign.count({ where }),
+      this.prisma.marketingCampaign.findMany({
+        where,
+        orderBy: { updatedAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
+
+    return this.paginate(campaigns.map((record) => this.mapCampaign(record)), total, page, pageSize);
+  }
+
+  async listReferralInvites(query: ReferralListQueryDto): Promise<AdminPaginatedResponse<AdminReferralRecord>> {
+    const page = Math.max(1, this.toNumber(query.page, 1));
+    const pageSize = Math.max(1, Math.min(100, this.toNumber(query.pageSize, DEFAULT_PAGE_SIZE)));
+    const where: Prisma.ReferralInviteWhereInput = {};
+
+    if (query.status) {
+      where.status = this.parseReferralStatus(query.status);
+    }
+
+    if (query.search) {
+      where.OR = [
+        { referralCode: { contains: query.search, mode: 'insensitive' } },
+        { referredEmail: { contains: query.search, mode: 'insensitive' } },
+        {
+          referrer: {
+            OR: [
+              { firstName: { contains: query.search, mode: 'insensitive' } },
+              { lastName: { contains: query.search, mode: 'insensitive' } },
+              { email: { contains: query.search, mode: 'insensitive' } },
+            ],
+          },
+        },
+      ];
+    }
+
+    const [allGroups, groups] = await Promise.all([
+      this.prisma.referralInvite.groupBy({
+        by: ['referrerId', 'referralCode'],
+        where,
+      }),
+      this.prisma.referralInvite.groupBy({
+        by: ['referrerId', 'referralCode'],
+        where,
+        orderBy: { _max: { updatedAt: 'desc' } },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        _max: { updatedAt: true },
+      }),
+    ]);
+
+    const total = allGroups.length;
+
+    if (groups.length === 0) {
+      return this.paginate([], total, page, pageSize);
+    }
+
+    const invites = await this.prisma.referralInvite.findMany({
+      where: {
+        OR: groups.map((group) => ({
+          referrerId: group.referrerId,
+          referralCode: group.referralCode,
+        })),
+      },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        referrer: { select: { id: true, firstName: true, lastName: true, email: true } },
+        referredUser: { select: { id: true, firstName: true, lastName: true, email: true } },
+        booking: { select: { id: true } },
+      },
+    });
+
+    const aggregated = this.aggregateReferralInvites(invites);
+    const records = groups
+      .map((group) => {
+        const key = this.referralKey(group.referrerId, group.referralCode);
+        const record = aggregated.get(key);
+        if (!record) {
+          return undefined;
+        }
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { _priority, ...rest } = record;
+        return rest;
+      })
+      .filter((record): record is AdminReferralRecord => Boolean(record));
+
+    return this.paginate(records, total, page, pageSize);
+  }
+
   private mapUsageRecord(record: Prisma.PromoCodeUsageGetPayload<{
     include: {
       promoCode: { select: { id: true, code: true } },
@@ -528,5 +665,121 @@ export class EmployeeMarketingService {
       currency: record.currency,
       status: record.status ?? 'applied',
     };
+  }
+
+  private mapCampaign(record: MarketingCampaignRecord): AdminMarketingCampaign {
+    return {
+      id: record.id,
+      name: record.name,
+      channel: record.channel.toLowerCase() as AdminMarketingCampaign['channel'],
+      status: record.status.toLowerCase() as AdminMarketingCampaign['status'],
+      targetAudience: record.targetAudience ?? null,
+      scheduledAt: record.scheduledAt ? record.scheduledAt.toISOString() : null,
+      completedAt: record.completedAt ? record.completedAt.toISOString() : null,
+      sendCount: record.sendCount,
+      openRate: record.openRate ?? null,
+      clickRate: record.clickRate ?? null,
+      conversionRate: record.conversionRate ?? null,
+      revenueCents: record.revenueCents ?? null,
+      notes: record.notes ?? null,
+      createdAt: record.createdAt.toISOString(),
+      updatedAt: record.updatedAt.toISOString(),
+    };
+  }
+
+  private parseCampaignStatus(status: string): PrismaMarketingCampaignStatus {
+    return status.toUpperCase() as PrismaMarketingCampaignStatus;
+  }
+
+  private parseCampaignChannel(channel: string): PrismaMarketingCampaignChannel {
+    return channel.toUpperCase() as PrismaMarketingCampaignChannel;
+  }
+
+  private parseReferralStatus(status: string): PrismaReferralStatus {
+    return status.toUpperCase() as PrismaReferralStatus;
+  }
+
+  private referralKey(referrerId: string, code: string) {
+    return `${referrerId}::${code}`;
+  }
+
+  private aggregateReferralInvites(invites: ReferralInviteWithRelations[]): Map<string, ReferralRecordAccumulator> {
+    const map = new Map<string, ReferralRecordAccumulator>();
+
+    for (const invite of invites) {
+      const key = this.referralKey(invite.referrerId, invite.referralCode);
+      const referrerName = `${invite.referrer.firstName ?? ''} ${invite.referrer.lastName ?? ''}`.trim() || invite.referrer.email;
+      const inviteeName =
+        invite.referredUser && `${invite.referredUser.firstName ?? ''} ${invite.referredUser.lastName ?? ''}`.trim()
+          ? `${invite.referredUser.firstName ?? ''} ${invite.referredUser.lastName ?? ''}`.trim()
+          : invite.referredUser?.email ?? invite.referredEmail;
+
+      let record = map.get(key);
+      if (!record) {
+        record = {
+          id: key,
+          code: invite.referralCode,
+          referrer: {
+            id: invite.referrerId,
+            name: referrerName,
+            email: invite.referrer.email,
+          },
+          invites: [],
+          rewardReferrerCents: 0,
+          totalRewardedCents: 0,
+          status: this.mapReferralStatus(invite.status),
+          createdAt: invite.createdAt.toISOString(),
+          updatedAt: invite.updatedAt.toISOString(),
+          _priority: this.referralStatusPriority(invite.status),
+        };
+        map.set(key, record);
+      }
+
+      record.invites.push({
+        id: invite.id,
+        name: inviteeName,
+        email: invite.referredUser?.email ?? invite.referredEmail,
+        status: this.mapReferralStatus(invite.status),
+        bookingId: invite.bookingId ?? null,
+        rewardReferredCents: invite.rewardReferredCents,
+      });
+
+      record.rewardReferrerCents += invite.rewardReferrerCents;
+      record.totalRewardedCents += invite.rewardReferrerCents + invite.rewardReferredCents;
+
+      if (new Date(record.createdAt).getTime() > invite.createdAt.getTime()) {
+        record.createdAt = invite.createdAt.toISOString();
+      }
+      if (new Date(record.updatedAt).getTime() < invite.updatedAt.getTime()) {
+        record.updatedAt = invite.updatedAt.toISOString();
+      }
+
+      const priority = this.referralStatusPriority(invite.status);
+      if (priority > record._priority) {
+        record._priority = priority;
+        record.status = this.mapReferralStatus(invite.status);
+      }
+    }
+
+    return map;
+  }
+
+  private mapReferralStatus(status: PrismaReferralStatus): AdminReferralRecord['status'] {
+    return status.toLowerCase() as AdminReferralRecord['status'];
+  }
+
+  private referralStatusPriority(status: PrismaReferralStatus): number {
+    switch (status) {
+      case 'REWARDED':
+        return 5;
+      case 'PENDING_PAYOUT':
+        return 4;
+      case 'BOOKED':
+        return 3;
+      case 'SIGNED_UP':
+        return 2;
+      default:
+        return 1;
+    }
   }
 }
